@@ -17,33 +17,31 @@ static SERVER_VERSION: LazyLock<HeaderValue> = LazyLock::new(|| {
 });
 
 pub fn error_response(
-    error_type: String,
-    title: String,
+    error_type: impl Into<String>,
+    title: impl Into<String>,
     status: u16,
-    detail: String,
-    instance: String,
+    detail: impl Into<String>,
+    instance: impl Into<String>,
 ) -> Json<Value> {
     Json(json!({
-        "type": error_type,
-        "title": title,
+        "type": error_type.into(),
+        "title": title.into(),
         "status": status,
-        "detail": detail,
-        "instance": instance,
+        "detail": detail.into(),
+        "instance": instance.into(),
     }))
 }
 
 async fn handler_404(req: Request) -> impl IntoResponse {
+    let path = req.uri().path().to_string();
     (
         StatusCode::NOT_FOUND,
         error_response(
-            "https://ietf.org".to_string(),
-            "Not Found".to_string(),
+            "https://ietf.org",
+            "Not Found",
             StatusCode::NOT_FOUND.as_u16(),
-            format!(
-                "The requested resource {0} does not exist.",
-                req.uri().path()
-            ),
-            req.uri().path().to_string(),
+            format!("The requested resource {path:?} does not exist."),
+            path,
         ),
     )
 }
@@ -52,7 +50,7 @@ async fn add_response_headers(req: Request, next: Next) -> Response {
     let mut response = next.run(req).await;
     response
         .headers_mut()
-        .append("Server", SERVER_VERSION.clone());
+        .insert("Server", SERVER_VERSION.clone());
     response
 }
 
@@ -71,15 +69,14 @@ pub async fn health() -> Json<Value> {
 
 pub async fn serve(config: &Config) {
     let router = Router::new()
-        .layer(middleware::from_fn(add_response_headers))
         .route("/", get(index))
         .route("/health", get(health))
-        .fallback(handler_404);
+        .fallback(handler_404)
+        .layer(middleware::from_fn(add_response_headers));
     let addr = SocketAddr::new(config.listen_address, config.port);
-    let start_failure = format!("Failed to bind to the {addr:?}");
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .expect(&start_failure);
+        .unwrap_or_else(|e| panic!("Failed to bind to {addr:?}: {e}"));
     println!(
         "Dotilla v{} listening on {addr:?}",
         env!("CARGO_PKG_VERSION")

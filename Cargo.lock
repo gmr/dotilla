@@ -271,6 +271,7 @@ dependencies = [
  "clap",
  "fjall",
  "serde",
+ "serde_json",
  "shellexpand",
  "tempfile",
  "thiserror",

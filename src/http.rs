@@ -16,8 +16,36 @@ static SERVER_VERSION: LazyLock<HeaderValue> = LazyLock::new(|| {
         .expect("Failed to parse server version")
 });
 
-async fn handler_404() -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "nothing to see here")
+pub fn error_response(
+    error_type: String,
+    title: String,
+    status: u16,
+    detail: String,
+    instance: String,
+) -> Json<Value> {
+    Json(json!({
+        "type": error_type,
+        "title": title,
+        "status": status,
+        "detail": detail,
+        "instance": instance,
+    }))
+}
+
+async fn handler_404(req: Request) -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        error_response(
+            "https://ietf.org".to_string(),
+            "Not Found".to_string(),
+            StatusCode::NOT_FOUND.as_u16(),
+            format!(
+                "The requested resource {0} does not exist.",
+                req.uri().path()
+            ),
+            req.uri().path().to_string(),
+        ),
+    )
 }
 
 async fn add_response_headers(req: Request, next: Next) -> Response {

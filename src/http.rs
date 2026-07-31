@@ -75,8 +75,16 @@ pub async fn serve(config: &Config) {
         .route("/", get(index))
         .route("/health", get(health))
         .fallback(handler_404);
-
     let addr = SocketAddr::new(config.listen_address, config.port);
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, router).await.unwrap();
+    let start_failure = format!("Failed to bind to the {addr:?}");
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .expect(&start_failure);
+    println!(
+        "Dotilla v{} listening on {addr:?}",
+        env!("CARGO_PKG_VERSION")
+    );
+    axum::serve(listener, router)
+        .await
+        .expect("Failed to start the axum server");
 }

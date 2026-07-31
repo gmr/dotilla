@@ -18,8 +18,6 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
-    println!("Dotilla v{}", env!("CARGO_PKG_VERSION"));
-
     let cli = Cli::parse();
 
     let config = match config::load(cli.config) {

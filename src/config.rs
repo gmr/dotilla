@@ -148,6 +148,36 @@ mod tests {
     }
 
     #[test]
+    fn exit_code_io() {
+        let error = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, ""));
+        assert_eq!(error.exit_code(), 1);
+    }
+
+    #[test]
+    fn exit_code_toml() {
+        let toml_error = toml::from_str::<Config>("not valid toml").unwrap_err();
+        let error = Error::Toml(toml_error);
+        assert_eq!(error.exit_code(), 2);
+    }
+
+    #[test]
+    fn exit_code_data_directory() {
+        let error = Error::DataDirectory {
+            path: PathBuf::from("/some/path"),
+        };
+        assert_eq!(error.exit_code(), 3);
+    }
+
+    #[test]
+    fn exit_code_permission_check() {
+        let error = Error::PermissionCheck {
+            path: PathBuf::from("/some/path"),
+            source: std::io::Error::new(std::io::ErrorKind::Other, ""),
+        };
+        assert_eq!(error.exit_code(), 4);
+    }
+
+    #[test]
     fn validate_data_directory_ok() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
         assert!(validate_data_directory(tmp_dir.path()).is_ok());

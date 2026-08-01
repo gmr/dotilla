@@ -94,15 +94,10 @@ async fn health() -> Json<Value> {
 
 async fn handle_404(req: Request) -> impl IntoResponse {
     let path = req.uri().path().to_string();
-    let host = req
-        .headers()
-        .get(axum::http::header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("unknown");
     (
         StatusCode::NOT_FOUND,
         error_response(
-            format!("http://{host}"),
+            "about:blank",
             "Not Found",
             StatusCode::NOT_FOUND.as_u16(),
             format!("The requested resource {path:?} does not exist."),

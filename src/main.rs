@@ -1,7 +1,5 @@
-mod config;
-mod http;
-
 use clap::Parser;
+use dotilla::{config, http};
 use std::path::PathBuf;
 use std::process;
 use thiserror::Error;

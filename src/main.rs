@@ -15,7 +15,7 @@ async fn main() {
     };
 
     if cli.debug {
-        println!("debug mode enabled");
+        println!("Debug mode enabled");
     }
 
     if let Err(err) = http::serve(config.listen_address, config.port).await {
@@ -68,4 +68,26 @@ impl StartupError {
 fn startup_failure(err: StartupError) -> ! {
     eprintln!("{err}");
     process::exit(err.exit_code());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exit_code_config() {
+        let error = StartupError::Config {
+            err: config::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "")),
+        };
+        assert_eq!(error.exit_code(), 1);
+    }
+    #[test]
+    fn exit_code_http() {
+        let error = StartupError::Http {
+            err: http::Error::ServeFailure {
+                err: std::io::Error::new(std::io::ErrorKind::Other, ""),
+            },
+        };
+        assert_eq!(error.exit_code(), 6);
+    }
 }

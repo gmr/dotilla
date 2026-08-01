@@ -25,7 +25,7 @@ async fn main() {
     }
 }
 
-/// Command Line options for the application.
+/// Dotilla is a Graph database server that uses HTTP to serve graph data.
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {

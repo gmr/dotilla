@@ -135,3 +135,36 @@ fn validate_data_directory(path: impl AsRef<Path>) -> Result<(), Error> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use tempfile::{NamedTempFile, tempdir};
+
+    #[test]
+    fn validate_data_directory_ok() {
+        let tmp_dir = tempdir().expect("failed to create temp dir");
+        assert!(validate_data_directory(tmp_dir.path()).is_ok());
+    }
+
+    #[test]
+    fn validate_data_directory_is_created() {
+        let tmp_dir = tempdir().expect("failed to create temp dir");
+        let path = tmp_dir.path().to_path_buf();
+        fs::remove_dir(&path).ok();
+        assert!(validate_data_directory(&path).is_ok());
+        let metadata = std::fs::metadata(&path).expect("failed to get metadata");
+        assert!(metadata.is_dir());
+    }
+
+    #[test]
+    fn validate_data_directory_is_not_a_dir() {
+        let tmp_dir = tempdir().expect("failed to create temp dir");
+        let tmp_file = NamedTempFile::new_in(&tmp_dir).expect("failed to create temp file");
+        match validate_data_directory(tmp_file.path()) {
+            Err(Error::DataDirectory { path }) => assert_eq!(path, tmp_file.path()),
+            _ => panic!("expected DataDirectory error"),
+        }
+    }
+}

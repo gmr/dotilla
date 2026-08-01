@@ -143,6 +143,11 @@ mod tests {
     use tempfile::{NamedTempFile, tempdir};
 
     #[test]
+    fn default_data_directory_is_dotilla_home() {
+        assert_eq!(default_data_directory(), PathBuf::from("~/.dotilla"));
+    }
+
+    #[test]
     fn validate_data_directory_ok() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
         assert!(validate_data_directory(tmp_dir.path()).is_ok());
@@ -163,6 +168,68 @@ mod tests {
         let tmp_dir = tempdir().expect("failed to create temp dir");
         let tmp_file = NamedTempFile::new_in(&tmp_dir).expect("failed to create temp file");
         match validate_data_directory(tmp_file.path()) {
+            Err(Error::DataDirectory { path }) => assert_eq!(path, tmp_file.path()),
+            _ => panic!("expected DataDirectory error"),
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn validate_data_directory_permission_denied() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp_dir = tempdir().expect("failed to create temp dir");
+        let path = tmp_dir.path();
+        let mut perms = fs::metadata(path)
+            .expect("failed to get metadata")
+            .permissions();
+        perms.set_mode(0o500);
+        fs::set_permissions(path, perms).expect("failed to set permissions");
+
+        let result = validate_data_directory(path);
+
+        // Restore permissions so the tempdir can clean itself up on drop.
+        let mut perms = fs::metadata(path)
+            .expect("failed to get metadata")
+            .permissions();
+        perms.set_mode(0o700);
+        fs::set_permissions(path, perms).expect("failed to restore permissions");
+
+        match result {
+            Err(Error::PermissionCheck { path: err_path, .. }) => assert_eq!(err_path, path),
+            other => panic!("expected PermissionCheck error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_data_directory_creates_nested_dirs() {
+        let tmp_dir = tempdir().expect("failed to create temp dir");
+        let path = tmp_dir.path().join("a").join("b").join("c");
+        let metadata = create_data_directory(&path).expect("failed to create data directory");
+        assert!(metadata.is_dir());
+    }
+
+    #[test]
+    fn validate_ok() {
+        let tmp_dir = tempdir().expect("failed to create temp dir");
+        let config = Config {
+            data_directory: tmp_dir.path().to_path_buf(),
+            listen_address: default_listen_address(),
+            port: default_port(),
+        };
+        assert!(validate(&config).is_ok());
+    }
+
+    #[test]
+    fn validate_propagates_data_directory_error() {
+        let tmp_dir = tempdir().expect("failed to create temp dir");
+        let tmp_file = NamedTempFile::new_in(&tmp_dir).expect("failed to create temp file");
+        let config = Config {
+            data_directory: tmp_file.path().to_path_buf(),
+            listen_address: default_listen_address(),
+            port: default_port(),
+        };
+        match validate(&config) {
             Err(Error::DataDirectory { path }) => assert_eq!(path, tmp_file.path()),
             _ => panic!("expected DataDirectory error"),
         }

@@ -240,6 +240,17 @@ mod tests {
     }
 
     #[test]
+    fn create_data_directory_fails_when_parent_is_a_file() {
+        let tmp_dir = tempdir().expect("failed to create temp dir");
+        let tmp_file = NamedTempFile::new_in(&tmp_dir).expect("failed to create temp file");
+        let path = tmp_file.path().join("subdir");
+        match create_data_directory(&path) {
+            Err(Error::PermissionCheck { path: err_path, .. }) => assert_eq!(err_path, path),
+            other => panic!("expected PermissionCheck error, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn validate_ok() {
         let tmp_dir = tempdir().expect("failed to create temp dir");
         let config = Config {

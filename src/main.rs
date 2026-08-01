@@ -36,12 +36,9 @@ async fn main() {
         println!("debug mode enabled");
     }
 
-    match config::validate(&config) {
-        Ok(_) => {}
-        Err(err) => {
-            eprintln!("{err}");
-            process::exit(err.exit_code());
-        }
+    if let Err(err) = config::validate(&config) {
+        eprintln!("{err}");
+        process::exit(err.exit_code());
     }
 
     http::serve(&config).await;

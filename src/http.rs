@@ -1,4 +1,3 @@
-use crate::config::Config;
 use axum::{
     Router,
     extract::Request,
@@ -18,19 +17,24 @@ use thiserror::Error;
 ///
 /// Returns [`Error::ListenFailure`] if the server fails to bind to the specified address.
 /// Returns [`Error::ServeFailure`] if the server fails to serve.
-pub async fn serve(config: &Config) -> Result<(), Error> {
-    let router = create_router();
-    let addr = SocketAddr::new(config.listen_address, config.port);
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .map_err(|e| Error::ListenFailure { addr, err: e })?;
-    println!(
-        "Dotilla v{} listening on {addr:?}",
-        env!("CARGO_PKG_VERSION")
-    );
-    axum::serve(listener, router)
-        .await
-        .map_err(|e| Error::ServeFailure { err: e })
+pub async fn serve(listen_address: std::net::IpAddr, port: u16) -> Result<(), Error> {
+    let addr = SocketAddr::new(listen_address, port);
+    let listener = bind_listener(addr).await?;
+    start_http_server(listener).await
+}
+
+/// Binds the TCP listener to the specified address.
+async fn bind_listener(addr: SocketAddr) -> Result<tokio::net::TcpListener, Error> {
+    match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => {
+            println!(
+                "Dotilla v{} listening on {addr:?}",
+                env!("CARGO_PKG_VERSION")
+            );
+            Ok(listener)
+        }
+        Err(e) => Err(Error::ListenFailure { addr, err: e }),
+    }
 }
 
 /// Creates the router for the HTTP server.
@@ -40,6 +44,14 @@ fn create_router() -> Router {
         .route("/health", get(health))
         .fallback(handle_404)
         .layer(middleware::from_fn(add_response_headers))
+}
+
+/// Start the HTTP server
+async fn start_http_server(listener: tokio::net::TcpListener) -> Result<(), Error> {
+    match axum::serve(listener, create_router()).await {
+        Ok(_) => Ok(()),
+        Err(e) => Err(Error::ServeFailure { err: e }),
+    }
 }
 
 /// Errors that can occur while starting or running the HTTP server.
@@ -136,7 +148,59 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use tokio::time::{Duration, sleep};
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn bind_listener_ok() {
+        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let addr = SocketAddr::new(ip_addr, 0);
+        assert!(bind_listener(addr).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn bind_listener_err() {
+        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let addr = SocketAddr::new(ip_addr, 32768);
+        let listener = bind_listener(addr).await;
+        assert!(listener.is_ok());
+        match bind_listener(addr).await {
+            Ok(_) => assert!(false),
+            Err(
+                ref error @ Error::ListenFailure {
+                    addr: bound_addr,
+                    ref err,
+                },
+            ) => {
+                assert_eq!(bound_addr, addr);
+                assert!(err.kind() == std::io::ErrorKind::AddrInUse);
+                assert_eq!(error.exit_code(), 5);
+            }
+            Err(_) => assert!(false),
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    #[tokio::test]
+    async fn start_http_server_ok() {
+        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let addr = SocketAddr::new(ip_addr, 0);
+        let listener = bind_listener(addr).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async {
+            match start_http_server(listener).await {
+                Ok(_) => assert!(true),
+                Err(_) => assert!(false),
+            }
+        });
+        sleep(Duration::from_millis(500)).await;
+        let resp = reqwest::get(format!("http://{}/health", addr))
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+        sleep(Duration::from_millis(500)).await;
+        task.abort();
+    }
 
     #[test]
     fn exit_code_listen_failure() {

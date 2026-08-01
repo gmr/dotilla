@@ -18,7 +18,7 @@ async fn main() {
         println!("debug mode enabled");
     }
 
-    if let Err(err) = http::serve(&config).await {
+    if let Err(err) = http::serve(config.listen_address, config.port).await {
         startup_failure(StartupError::Http { err });
     }
 }

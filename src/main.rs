@@ -2,7 +2,7 @@ mod config;
 mod http;
 
 use clap::Parser;
-use config::{ConfigError, ValidationError};
+use config::ConfigError;
 use std::path::PathBuf;
 use std::process;
 
@@ -38,13 +38,9 @@ async fn main() {
 
     match config::validate(&config) {
         Ok(_) => {}
-        Err(ValidationError::DataDirectory { path }) => {
-            eprintln!("Data directory is not a directory: {path:?}");
-            process::exit(3);
-        }
-        Err(ValidationError::PermissionCheck { path }) => {
-            eprintln!("Can not write to data directory: {path:?}");
-            process::exit(4);
+        Err(err) => {
+            eprintln!("{err}");
+            process::exit(err.exit_code());
         }
     }
 

@@ -25,7 +25,6 @@ async fn main() {
     let cancellation_token = CancellationToken::new();
 
     let mut join_set = JoinSet::new();
-
     join_set.spawn(signal_handler(cancellation_token.clone()));
     join_set.spawn(http::serve(
         config.listen_address,
@@ -98,6 +97,7 @@ fn startup_failure(err: StartupError) -> ! {
     process::exit(err.exit_code());
 }
 
+/// Catch CTRL-C and SIGTERM signals to gracefully shut down the server.
 async fn signal_handler(token: CancellationToken) -> Result<(), http::Error> {
     let ctrl_c = async {
         signal::ctrl_c()

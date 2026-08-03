@@ -78,10 +78,10 @@ impl Error {
     /// Map the error to an exit code.
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::Io { .. } => 1,
-            Error::Toml { .. } => 2,
-            Error::DataDirectory { .. } => 3,
-            Error::PermissionCheck { .. } => 4,
+            Error::Io { .. } => 2,
+            Error::Toml { .. } => 3,
+            Error::DataDirectory { .. } => 4,
+            Error::PermissionCheck { .. } => 5,
         }
     }
 }
@@ -150,14 +150,14 @@ mod tests {
     #[test]
     fn exit_code_io() {
         let error = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, ""));
-        assert_eq!(error.exit_code(), 1);
+        assert_eq!(error.exit_code(), 2);
     }
 
     #[test]
     fn exit_code_toml() {
         let toml_error = toml::from_str::<Config>("not valid toml").unwrap_err();
         let error = Error::Toml(toml_error);
-        assert_eq!(error.exit_code(), 2);
+        assert_eq!(error.exit_code(), 3);
     }
 
     #[test]
@@ -165,7 +165,7 @@ mod tests {
         let error = Error::DataDirectory {
             path: PathBuf::from("/some/path"),
         };
-        assert_eq!(error.exit_code(), 3);
+        assert_eq!(error.exit_code(), 4);
     }
 
     #[test]
@@ -174,7 +174,7 @@ mod tests {
             path: PathBuf::from("/some/path"),
             source: std::io::Error::new(std::io::ErrorKind::Other, ""),
         };
-        assert_eq!(error.exit_code(), 4);
+        assert_eq!(error.exit_code(), 5);
     }
 
     #[test]

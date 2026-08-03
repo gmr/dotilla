@@ -9,7 +9,10 @@ use axum::{
 use serde_json::{Value, json};
 use std::net::SocketAddr;
 use std::sync::LazyLock;
+use std::time::Duration;
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
+use tower_http::timeout::TimeoutLayer;
 
 /// Runs the HTTP server until it exits or fails to bind/serve.
 ///
@@ -17,10 +20,14 @@ use thiserror::Error;
 ///
 /// Returns [`Error::ListenFailure`] if the server fails to bind to the specified address.
 /// Returns [`Error::ServeFailure`] if the server fails to serve.
-pub async fn serve(listen_address: std::net::IpAddr, port: u16) -> Result<(), Error> {
+pub async fn serve(
+    listen_address: std::net::IpAddr,
+    port: u16,
+    cancellation_token: CancellationToken,
+) -> Result<(), Error> {
     let addr = SocketAddr::new(listen_address, port);
     let listener = bind_listener(addr).await?;
-    start_http_server(listener).await
+    start_http_server(listener, cancellation_token).await
 }
 
 /// Binds the TCP listener to the specified address.
@@ -43,12 +50,21 @@ fn create_router() -> Router {
         .route("/", get(index))
         .route("/health", get(health))
         .fallback(handle_404)
-        .layer(middleware::from_fn(add_response_headers))
+        .layer((
+            middleware::from_fn(add_response_headers),
+            TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(10)),
+        ))
 }
 
 /// Start the HTTP server
-async fn start_http_server(listener: tokio::net::TcpListener) -> Result<(), Error> {
-    match axum::serve(listener, create_router()).await {
+async fn start_http_server(
+    listener: tokio::net::TcpListener,
+    cancellation_token: CancellationToken,
+) -> Result<(), Error> {
+    match axum::serve(listener, create_router())
+        .with_graceful_shutdown(cancellation_token.cancelled_owned())
+        .await
+    {
         Ok(_) => Ok(()),
         Err(e) => Err(Error::ServeFailure { err: e }),
     }
@@ -73,8 +89,8 @@ impl Error {
     /// Returns the exit code for each error type.
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::ListenFailure { .. } => 5,
-            Error::ServeFailure { .. } => 6,
+            Error::ListenFailure { .. } => 6,
+            Error::ServeFailure { .. } => 7,
         }
     }
 }
@@ -174,7 +190,7 @@ mod tests {
             ) => {
                 assert_eq!(bound_addr, addr);
                 assert!(err.kind() == std::io::ErrorKind::AddrInUse);
-                assert_eq!(error.exit_code(), 5);
+                assert_eq!(error.exit_code(), 6);
             }
             Err(_) => assert!(false),
         }
@@ -187,8 +203,9 @@ mod tests {
         let addr = SocketAddr::new(ip_addr, 0);
         let listener = bind_listener(addr).await.unwrap();
         let addr = listener.local_addr().unwrap();
+        let cancellation_token = CancellationToken::new();
         let task = tokio::spawn(async {
-            match start_http_server(listener).await {
+            match start_http_server(listener, cancellation_token).await {
                 Ok(_) => assert!(true),
                 Err(_) => assert!(false),
             }
@@ -210,7 +227,7 @@ mod tests {
             addr: addr,
             err: std::io::Error::new(std::io::ErrorKind::Other, ""),
         };
-        assert_eq!(error.exit_code(), 5);
+        assert_eq!(error.exit_code(), 6);
     }
 
     #[test]
@@ -218,7 +235,7 @@ mod tests {
         let error = Error::ServeFailure {
             err: std::io::Error::new(std::io::ErrorKind::Other, ""),
         };
-        assert_eq!(error.exit_code(), 6);
+        assert_eq!(error.exit_code(), 7);
     }
 
     #[tokio::test]

@@ -13,7 +13,9 @@ shellexpand = { version = "3.1.2", features = ["path"] }
 tempfile = "3"
 thiserror = "2.0.19"
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7.19"
 toml = "1.1.4"
+tower-http = { version = "0.7.0", features = ["timeout"] }
 
 [dev-dependencies]
 assert_cmd = "2"

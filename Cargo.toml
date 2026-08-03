@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 axum = "0.8.9"
 clap = { version = "4.6.5", features = ["derive"] }
-fjall = "3.1.8"
+fjall = { version = "3", features = ["lz4", "metrics"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.151"
 shellexpand = { version = "3.1.2", features = ["path"] }
@@ -16,6 +16,9 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7.19"
 toml = "1.1.4"
 tower-http = { version = "0.7.0", features = ["timeout"] }
+tree-sitter = "0.26.11"
+tree-sitter-cypher = "0.2.6"
+
 
 [dev-dependencies]
 assert_cmd = "2"

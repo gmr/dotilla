@@ -2,11 +2,15 @@ mod utils;
 
 use crate::utils::*;
 use assert_cmd::Command;
+use dotilla::cypher::build_cypher_parser;
 use dotilla::http::*;
+use dotilla::state::AppState;
 use predicates::prelude::*;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr};
 use std::process::Stdio;
+use std::sync::Arc;
+use std::sync::Mutex;
 use tempfile::tempdir;
 use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
@@ -63,11 +67,14 @@ fn main_exits_4_on_invalid_data_directory() {
 
 #[tokio::test]
 async fn main_exits_6_on_port_in_use() {
-    let cancellation_token = CancellationToken::new();
+    let app_state = Arc::new(AppState {
+        cancellation_token: CancellationToken::new(),
+        cypher_parser: Mutex::new(build_cypher_parser().unwrap()),
+    });
     let cfg = write_config_with_ephemeral_port();
     let port = cfg.port.unwrap();
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let first_server = tokio::spawn(async move { serve(ip_addr, port, cancellation_token).await });
+    let first_server = tokio::spawn(async move { serve(ip_addr, port, app_state).await });
     sleep(Duration::from_millis(500)).await;
     assert!(!first_server.is_finished());
     Command::cargo_bin("dotilla")

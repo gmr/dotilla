@@ -1,8 +1,10 @@
 use clap::Parser;
-use dotilla::{config, http};
+use dotilla::{config, cypher, http, state};
 use std::panic;
 use std::path::PathBuf;
 use std::process;
+use std::sync::Arc;
+use std::sync::Mutex;
 use thiserror::Error;
 use tokio::signal;
 use tokio::task::{JoinError, JoinSet};
@@ -22,14 +24,17 @@ async fn main() {
         println!("Debug mode enabled");
     }
 
-    let cancellation_token = CancellationToken::new();
+    let app_state = Arc::new(state::AppState {
+        cancellation_token: CancellationToken::new(),
+        cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
+    });
 
     let mut join_set = JoinSet::new();
-    join_set.spawn(signal_handler(cancellation_token.clone()));
+    join_set.spawn(signal_handler(app_state.clone()));
     join_set.spawn(http::serve(
         config.listen_address,
         config.port,
-        cancellation_token.clone(),
+        app_state.clone(),
     ));
 
     while let Some(result) = join_set.join_next().await {
@@ -98,7 +103,7 @@ fn startup_failure(err: StartupError) -> ! {
 }
 
 /// Catch CTRL-C and SIGTERM signals to gracefully shut down the server.
-async fn signal_handler(token: CancellationToken) -> Result<(), http::Error> {
+async fn signal_handler(app_state: Arc<state::AppState>) -> Result<(), http::Error> {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
@@ -119,11 +124,11 @@ async fn signal_handler(token: CancellationToken) -> Result<(), http::Error> {
     tokio::select! {
         _ = ctrl_c => {
             eprintln!("CTRL-C caught, shutting down");
-            token.cancel();
+            app_state.cancellation_token.cancel();
         },
         _ = terminate => {
             eprintln!("SIGTERM caught, shutting down");
-            token.cancel();
+            app_state.cancellation_token.cancel();
         },
     }
     Ok(())

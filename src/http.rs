@@ -1,18 +1,20 @@
 use axum::{
     Router,
-    extract::Request,
+    extract::{Path, Request, State},
     http::{HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Json, Response},
-    routing::get,
+    routing::{get, post},
 };
 use serde_json::{Value, json};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::Duration;
 use thiserror::Error;
-use tokio_util::sync::CancellationToken;
 use tower_http::timeout::TimeoutLayer;
+
+use crate::state::AppState;
 
 /// Runs the HTTP server until it exits or fails to bind/serve.
 ///
@@ -23,11 +25,11 @@ use tower_http::timeout::TimeoutLayer;
 pub async fn serve(
     listen_address: std::net::IpAddr,
     port: u16,
-    cancellation_token: CancellationToken,
+    app_state: Arc<AppState>,
 ) -> Result<(), Error> {
     let addr = SocketAddr::new(listen_address, port);
     let listener = bind_listener(addr).await?;
-    start_http_server(listener, cancellation_token).await
+    start_http_server(listener, app_state).await
 }
 
 /// Binds the TCP listener to the specified address.
@@ -45,23 +47,26 @@ async fn bind_listener(addr: SocketAddr) -> Result<tokio::net::TcpListener, Erro
 }
 
 /// Creates the router for the HTTP server.
-fn create_router() -> Router {
+fn create_router(app_state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/", get(index))
-        .route("/health", get(health))
+        .route("/", get(handle_index))
+        .route("/health", get(handle_health))
+        .route("/{db}", post(handle_cypher_query))
         .fallback(handle_404)
         .layer((
             middleware::from_fn(add_response_headers),
             TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(10)),
         ))
+        .with_state(app_state)
 }
 
 /// Start the HTTP server
 async fn start_http_server(
     listener: tokio::net::TcpListener,
-    cancellation_token: CancellationToken,
+    app_state: Arc<AppState>,
 ) -> Result<(), Error> {
-    match axum::serve(listener, create_router())
+    let cancellation_token = app_state.cancellation_token.clone();
+    match axum::serve(listener, create_router(app_state))
         .with_graceful_shutdown(cancellation_token.cancelled_owned())
         .await
     {
@@ -112,14 +117,14 @@ async fn add_response_headers(req: Request, next: Next) -> Response {
 
 // --- Route Handlers ---
 
-async fn index() -> Json<Value> {
+async fn handle_index() -> Json<Value> {
     Json(json!({
         "name": env!("CARGO_PKG_NAME"),
         "version": env!("CARGO_PKG_VERSION"),
     }))
 }
 
-async fn health() -> Json<Value> {
+async fn handle_health() -> Json<Value> {
     Json(json!({
         "status": "ok"
     }))
@@ -137,6 +142,23 @@ async fn handle_404(req: Request) -> impl IntoResponse {
             path,
         ),
     )
+}
+
+#[derive(serde::Deserialize)]
+struct QueryParams {
+    db: String,
+}
+
+async fn handle_cypher_query(
+    State(app_state): State<Arc<AppState>>,
+    Path(params): Path<QueryParams>,
+    body: String,
+) -> impl IntoResponse {
+    eprintln!("Handling request for {}", params.db);
+    let state = app_state.clone();
+    let mut parser = state.cypher_parser.lock().unwrap();
+    let result = parser.parse(body, None).unwrap();
+    result.root_node().to_sexp()
 }
 
 /// Returns a standardized RFC 7807 JSON Problem Details error response
@@ -160,12 +182,22 @@ fn error_response(
 mod tests {
 
     use super::*;
+    use crate::cypher::build_cypher_parser;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::Mutex;
     use tokio::time::{Duration, sleep};
+    use tokio_util::sync::CancellationToken;
     use tower::ServiceExt;
+
+    fn build_state() -> Arc<AppState> {
+        Arc::new(AppState {
+            cancellation_token: CancellationToken::new(),
+            cypher_parser: Mutex::new(build_cypher_parser().unwrap()),
+        })
+    }
 
     #[tokio::test]
     async fn bind_listener_ok() {
@@ -203,9 +235,10 @@ mod tests {
         let addr = SocketAddr::new(ip_addr, 0);
         let listener = bind_listener(addr).await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let cancellation_token = CancellationToken::new();
-        let task = tokio::spawn(async {
-            match start_http_server(listener, cancellation_token).await {
+        let app_state = build_state();
+
+        let task = tokio::spawn(async move {
+            match start_http_server(listener, app_state.clone()).await {
                 Ok(_) => assert!(true),
                 Err(_) => assert!(false),
             }
@@ -240,7 +273,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_health() {
-        let router = create_router();
+        let app_state = build_state();
+        let router = create_router(app_state.clone());
         let req = Request::get("/health").body(Body::empty()).unwrap();
         let response = router.oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -248,7 +282,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_index() {
-        let router = create_router();
+        let app_state = build_state();
+        let router = create_router(app_state.clone());
         let req = Request::get("/").body(Body::empty()).unwrap();
         let response = router.oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -260,8 +295,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_file_not_found() {
-        let router = create_router();
-        let req = Request::get("/not_found").body(Body::empty()).unwrap();
+        let app_state = build_state();
+        let router = create_router(app_state.clone());
+        let req = Request::get("/not_found/foo").body(Body::empty()).unwrap();
         let response = router.oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let body = response.into_body().collect().await.unwrap().to_bytes();
@@ -273,9 +309,9 @@ mod tests {
             body["detail"],
             format!(
                 "The requested resource {path:?} does not exist.",
-                path = "/not_found"
+                path = "/not_found/foo"
             )
         );
-        assert_eq!(body["instance"], "/not_found".to_string());
+        assert_eq!(body["instance"], "/not_found/foo".to_string());
     }
 }

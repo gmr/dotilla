@@ -1,5 +1,5 @@
 use clap::Parser;
-use dotilla::{config, cypher, http, state};
+use dotilla::{config, cypher, http, state, storage};
 use std::panic;
 use std::path::PathBuf;
 use std::process;
@@ -24,9 +24,15 @@ async fn main() {
         println!("Debug mode enabled");
     }
 
+    let database = match storage::open(&config) {
+        Ok(db) => db,
+        Err(err) => startup_failure(StartupError::Storage { err }),
+    };
+
     let app_state = Arc::new(state::AppState {
         cancellation_token: CancellationToken::new(),
         cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
+        db: database,
     });
 
     let mut join_set = JoinSet::new();
@@ -83,6 +89,13 @@ enum StartupError {
         #[from]
         err: http::Error,
     },
+
+    /// Error opening the database
+    #[error("Database storage error: {err}")]
+    Storage {
+        #[from]
+        err: storage::Error,
+    },
 }
 
 impl StartupError {
@@ -92,6 +105,7 @@ impl StartupError {
             StartupError::Config { err } => err.exit_code(),
             StartupError::Http { err } => err.exit_code(),
             StartupError::Task { .. } => 1,
+            StartupError::Storage { err } => err.exit_code(),
         }
     }
 }

@@ -6,6 +6,7 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::{get, post},
 };
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tower_http::timeout::TimeoutLayer;
 
-use crate::state::AppState;
+use crate::{state, storage};
 
 /// Runs the HTTP server until it exits or fails to bind/serve.
 ///
@@ -25,7 +26,7 @@ use crate::state::AppState;
 pub async fn serve(
     listen_address: std::net::IpAddr,
     port: u16,
-    app_state: Arc<AppState>,
+    app_state: Arc<state::AppState>,
 ) -> Result<(), Error> {
     let addr = SocketAddr::new(listen_address, port);
     let listener = bind_listener(addr).await?;
@@ -47,7 +48,7 @@ async fn bind_listener(addr: SocketAddr) -> Result<tokio::net::TcpListener, Erro
 }
 
 /// Creates the router for the HTTP server.
-fn create_router(app_state: Arc<AppState>) -> Router {
+fn create_router(app_state: Arc<state::AppState>) -> Router {
     Router::new()
         .route("/", get(handle_index))
         .route("/health", get(handle_health))
@@ -63,7 +64,7 @@ fn create_router(app_state: Arc<AppState>) -> Router {
 /// Start the HTTP server
 async fn start_http_server(
     listener: tokio::net::TcpListener,
-    app_state: Arc<AppState>,
+    app_state: Arc<state::AppState>,
 ) -> Result<(), Error> {
     let cancellation_token = app_state.cancellation_token.clone();
     match axum::serve(listener, create_router(app_state))
@@ -132,16 +133,15 @@ async fn handle_health() -> Json<Value> {
 
 async fn handle_404(req: Request) -> impl IntoResponse {
     let path = req.uri().path().to_string();
-    (
-        StatusCode::NOT_FOUND,
-        error_response(
-            "about:blank",
-            "Not Found",
-            StatusCode::NOT_FOUND.as_u16(),
-            format!("The requested resource {path:?} does not exist."),
-            path,
-        ),
-    )
+    let response = ErrorResponse {
+        type_: "about:blank".to_string(),
+        title: "Not Found".to_string(),
+        status: StatusCode::NOT_FOUND.as_u16(),
+        detail: format!("The requested resource {path:?} does not exist."),
+        hint: None,
+        instance: path,
+    };
+    (StatusCode::NOT_FOUND, Json(json!(&response)))
 }
 
 #[derive(serde::Deserialize)]
@@ -150,39 +150,55 @@ struct QueryParams {
 }
 
 async fn handle_cypher_query(
-    State(app_state): State<Arc<AppState>>,
+    State(app_state): State<Arc<state::AppState>>,
     Path(params): Path<QueryParams>,
     body: String,
 ) -> impl IntoResponse {
-    eprintln!("Handling request for {}", params.db);
+    eprintln!("Handling cypher query request for {}", params.db);
     let state = app_state.clone();
-    let mut parser = state.cypher_parser.lock().unwrap();
-    let result = parser.parse(body, None).unwrap();
-    result.root_node().to_sexp()
+    return match storage::keyspace(&state.db, params.db.clone()).await {
+        Ok(_keyspace) => {
+            eprintln!("Would query in keyspace {:?}: {body:?}", params.db);
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "keyspace": params.db
+                })),
+            )
+        }
+        Err(err) => {
+            let hint = format!("Create a new database using PUT `/{0}`", params.db);
+            let response = ErrorResponse {
+                type_: "about:blank".to_string(),
+                title: "Not Found".to_string(),
+                status: StatusCode::NOT_FOUND.as_u16(),
+                detail: format!("Error querying database `{0}`: {1}", params.db, err),
+                instance: params.db,
+                hint: Some(hint),
+            };
+            (StatusCode::NOT_FOUND, Json(json!(&response)))
+        }
+    };
 }
 
 /// Returns a standardized RFC 7807 JSON Problem Details error response
-fn error_response(
-    error_type: impl Into<String>,
-    title: impl Into<String>,
+#[derive(Serialize, Debug)]
+struct ErrorResponse {
+    #[serde(rename = "type")]
+    type_: String,
+    title: String,
     status: u16,
-    detail: impl Into<String>,
-    instance: impl Into<String>,
-) -> Json<Value> {
-    Json(json!({
-        "type": error_type.into(),
-        "title": title.into(),
-        "status": status,
-        "detail": detail.into(),
-        "instance": instance.into(),
-    }))
+    detail: String,
+    instance: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hint: Option<String>,
 }
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use crate::cypher::build_cypher_parser;
+    use crate::{config, cypher, state, storage};
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt;
@@ -192,10 +208,21 @@ mod tests {
     use tokio_util::sync::CancellationToken;
     use tower::ServiceExt;
 
-    fn build_state() -> Arc<AppState> {
-        Arc::new(AppState {
+    fn build_state() -> Arc<state::AppState> {
+        let data_dir = tempfile::tempdir().unwrap();
+        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let addr = SocketAddr::new(ip_addr, 0);
+        let occupied = std::net::TcpListener::bind(addr).unwrap();
+        let port = occupied.local_addr().unwrap().port();
+        let config = config::Config {
+            data_directory: data_dir.path().to_path_buf(),
+            listen_address: ip_addr,
+            port: port,
+        };
+        Arc::new(state::AppState {
             cancellation_token: CancellationToken::new(),
-            cypher_parser: Mutex::new(build_cypher_parser().unwrap()),
+            cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
+            db: storage::open(&config).unwrap(),
         })
     }
 

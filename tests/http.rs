@@ -1,19 +1,30 @@
 mod utils;
 
 use crate::utils::*;
-use dotilla::cypher::build_cypher_parser;
 use dotilla::http::*;
 use dotilla::state::AppState;
-use std::net::{IpAddr, Ipv4Addr};
+use dotilla::{config, cypher, state, storage};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
 
 fn test_app_state() -> Arc<AppState> {
-    Arc::new(AppState {
+    let data_dir = tempfile::tempdir().unwrap();
+    let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    let addr = SocketAddr::new(ip_addr, 0);
+    let occupied = std::net::TcpListener::bind(addr).unwrap();
+    let port = occupied.local_addr().unwrap().port();
+    let config = config::Config {
+        data_directory: data_dir.path().to_path_buf(),
+        listen_address: ip_addr,
+        port: port,
+    };
+    Arc::new(state::AppState {
         cancellation_token: CancellationToken::new(),
-        cypher_parser: Mutex::new(build_cypher_parser().unwrap()),
+        cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
+        db: storage::open(&config).unwrap(),
     })
 }
 

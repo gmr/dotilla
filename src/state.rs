@@ -1,3 +1,4 @@
+use fjall::Database;
 use std::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tree_sitter::Parser;
@@ -9,4 +10,7 @@ pub struct AppState {
 
     /// Used to parse Cypher queries
     pub cypher_parser: Mutex<Parser>,
+
+    /// Primary database handle
+    pub db: Database,
 }

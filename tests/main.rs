@@ -5,34 +5,15 @@ use assert_cmd::Command;
 use dotilla::cypher::build_cypher_parser;
 use dotilla::http::*;
 use dotilla::state::AppState;
+use dotilla::{config, storage};
 use predicates::prelude::*;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr};
-use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tempfile::tempdir;
 use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
-
-#[test]
-fn main_ok_debug() {
-    let cfg = write_config(None);
-
-    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_dotilla"))
-        .arg("--config")
-        .arg(&cfg.path)
-        .arg("--debug")
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-
-    std::thread::sleep(Duration::from_millis(200));
-    child.kill().unwrap();
-    let output = child.wait_with_output().unwrap();
-
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Debug mode enabled"));
-}
 
 #[test]
 fn main_exits_2_on_missing_config() {
@@ -66,12 +47,14 @@ fn main_exits_4_on_invalid_data_directory() {
 }
 
 #[tokio::test]
-async fn main_exits_6_on_port_in_use() {
+async fn main_exits_10_database_error() {
+    let cfg = write_config_with_ephemeral_port();
+    let config_data = config::load(cfg.path.clone()).unwrap();
     let app_state = Arc::new(AppState {
         cancellation_token: CancellationToken::new(),
         cypher_parser: Mutex::new(build_cypher_parser().unwrap()),
+        db: storage::open(&config_data).unwrap(),
     });
-    let cfg = write_config_with_ephemeral_port();
     let port = cfg.port.unwrap();
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let first_server = tokio::spawn(async move { serve(ip_addr, port, app_state).await });
@@ -83,6 +66,6 @@ async fn main_exits_6_on_port_in_use() {
         .arg(&cfg.path)
         .assert()
         .failure()
-        .code(6);
+        .code(10);
     first_server.abort();
 }

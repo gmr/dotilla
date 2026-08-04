@@ -7,7 +7,8 @@ DB="${3:-test}"
 
 QUERY='MATCH (f:Foo)-[b:BAR]->(z:Baz) RETURN f, b, z'
 
-curl --fail -sS \
-    -X POST \
+curl -X POST \
+    -H "Content-Type: text/plain" \
     --data "$QUERY" \
-    "http://${HOST}:${PORT}/${DB}"
+    --verbose \
+    "http://${HOST}:${PORT}/${DB}" | jq .

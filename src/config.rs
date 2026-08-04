@@ -263,6 +263,7 @@ mod tests {
         let config = Config {
             data_directory: tmp_dir.path().to_path_buf(),
             listen_address: default_listen_address(),
+            default_locale: "und".to_string(),
             port: default_port(),
         };
         assert!(validate(&config).is_ok());
@@ -275,6 +276,7 @@ mod tests {
         let config = Config {
             data_directory: tmp_file.path().to_path_buf(),
             listen_address: default_listen_address(),
+            default_locale: "und".to_string(),
             port: default_port(),
         };
         match validate(&config) {

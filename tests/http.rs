@@ -3,7 +3,7 @@ mod utils;
 use crate::utils::*;
 use dotilla::http::server;
 use dotilla::state::AppState;
-use dotilla::{config, cypher, state, storage};
+use dotilla::{config, cypher, state};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -18,13 +18,14 @@ fn test_app_state() -> Arc<AppState> {
     let port = occupied.local_addr().unwrap().port();
     let config = config::Config {
         data_directory: data_dir.path().to_path_buf(),
+        default_locale: "und".to_string(),
         listen_address: ip_addr,
         port: port,
     };
     Arc::new(state::AppState {
         cancellation_token: CancellationToken::new(),
+        config,
         cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
-        db: storage::open(&config).unwrap(),
     })
 }
 

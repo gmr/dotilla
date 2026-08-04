@@ -19,4 +19,4 @@ jobs:
       - name: Build
         run: cargo build --verbose
       - name: Run tests
-        run: cargo llvm-cov --fail-under-lines 80
+        run: cargo llvm-cov

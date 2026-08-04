@@ -3,7 +3,7 @@ mod utils;
 use crate::utils::*;
 use assert_cmd::Command;
 use dotilla::cypher::build_cypher_parser;
-use dotilla::http::*;
+use dotilla::http::server;
 use dotilla::state::AppState;
 use dotilla::{config, storage};
 use predicates::prelude::*;
@@ -57,7 +57,7 @@ async fn main_exits_10_database_error() {
     });
     let port = cfg.port.unwrap();
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let first_server = tokio::spawn(async move { serve(ip_addr, port, app_state).await });
+    let first_server = tokio::spawn(async move { server::serve(ip_addr, port, app_state).await });
     sleep(Duration::from_millis(500)).await;
     assert!(!first_server.is_finished());
     Command::cargo_bin("dotilla")

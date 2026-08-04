@@ -23,7 +23,7 @@ pub fn load(path: impl AsRef<Path>) -> Result<Config, Error> {
 }
 
 /// Schema for the configuration file
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     /// The data directory where internal files are stored.
     #[serde(default = "default_data_directory")]
@@ -36,6 +36,9 @@ pub struct Config {
     /// The port for the server, default is `6465`.
     #[serde(default = "default_port")]
     pub port: u16,
+
+    #[serde(default = "default_locale")]
+    pub default_locale: String,
 }
 
 fn default_data_directory() -> PathBuf {
@@ -48,6 +51,10 @@ fn default_listen_address() -> IpAddr {
 
 fn default_port() -> u16 {
     6465
+}
+
+fn default_locale() -> String {
+    "und".to_string()
 }
 
 /// Errors that can occur when loading the configuration.

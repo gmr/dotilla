@@ -1,7 +1,7 @@
 mod utils;
 
 use crate::utils::*;
-use dotilla::http::*;
+use dotilla::http::server;
 use dotilla::state::AppState;
 use dotilla::{config, cypher, state, storage};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -33,7 +33,7 @@ async fn test_serve_ok() {
     let app_state = test_app_state();
     let port = get_ephemeral_port();
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let task = tokio::spawn(serve(ip_addr, port, app_state.clone()));
+    let task = tokio::spawn(server::serve(ip_addr, port, app_state.clone()));
     sleep(Duration::from_millis(500)).await;
     assert!(!task.is_finished());
     app_state.cancellation_token.cancel();
@@ -51,16 +51,16 @@ async fn test_serve_error() {
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let port = get_ephemeral_port();
     let first_task = tokio::spawn(async move {
-        match serve(ip_addr, port, app_state_one).await {
+        match server::serve(ip_addr, port, app_state_one).await {
             Ok(_) => assert!(true),
             Err(_) => assert!(false),
         }
     });
     let app_state_two = test_app_state();
     tokio::spawn(async move {
-        match serve(ip_addr, port, app_state_two).await {
+        match server::serve(ip_addr, port, app_state_two).await {
             Ok(_) => assert!(false),
-            Err(Error::ServeFailure { .. }) => assert!(true),
+            Err(server::Error::ServeFailure { .. }) => assert!(true),
             Err(_) => assert!(false),
         }
     });

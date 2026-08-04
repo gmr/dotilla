@@ -1,4 +1,3 @@
-use fjall::Database;
 use std::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tree_sitter::Parser;
@@ -8,9 +7,9 @@ pub struct AppState {
     /// Used when the app is shutting down to cancel pending tasks
     pub cancellation_token: CancellationToken,
 
+    /// Application Configuration
+    pub config: crate::config::Config,
+
     /// Used to parse Cypher queries
     pub cypher_parser: Mutex<Parser>,
-
-    /// Primary database handle
-    pub db: Database,
 }

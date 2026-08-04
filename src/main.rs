@@ -1,5 +1,4 @@
 use clap::Parser;
-use dotilla::{config, cypher, http, state, storage};
 use std::panic;
 use std::path::PathBuf;
 use std::process;
@@ -9,6 +8,8 @@ use thiserror::Error;
 use tokio::signal;
 use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
+
+use dotilla::{config, cypher, http::server, state};
 
 /// Entry point for the application.
 #[tokio::main]
@@ -24,20 +25,22 @@ async fn main() {
         println!("Debug mode enabled");
     }
 
+    /*
     let database = match storage::open(&config) {
         Ok(db) => db,
         Err(err) => startup_failure(StartupError::Storage { err }),
     };
+     */
 
     let app_state = Arc::new(state::AppState {
         cancellation_token: CancellationToken::new(),
+        config: config.clone(),
         cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
-        db: database,
     });
 
     let mut join_set = JoinSet::new();
     join_set.spawn(signal_handler(app_state.clone()));
-    join_set.spawn(http::serve(
+    join_set.spawn(server::serve(
         config.listen_address,
         config.port,
         app_state.clone(),
@@ -87,15 +90,16 @@ enum StartupError {
     #[error("HTTP Server error: {err}")]
     Http {
         #[from]
-        err: http::Error,
+        err: server::Error,
     },
-
+    /*
     /// Error opening the database
     #[error("Database storage error: {err}")]
     Storage {
         #[from]
         err: storage::Error,
     },
+     */
 }
 
 impl StartupError {
@@ -105,7 +109,7 @@ impl StartupError {
             StartupError::Config { err } => err.exit_code(),
             StartupError::Http { err } => err.exit_code(),
             StartupError::Task { .. } => 1,
-            StartupError::Storage { err } => err.exit_code(),
+            // StartupError::Storage { err } => err.exit_code(),
         }
     }
 }
@@ -117,7 +121,7 @@ fn startup_failure(err: StartupError) -> ! {
 }
 
 /// Catch CTRL-C and SIGTERM signals to gracefully shut down the server.
-async fn signal_handler(app_state: Arc<state::AppState>) -> Result<(), http::Error> {
+async fn signal_handler(app_state: Arc<state::AppState>) -> Result<(), server::Error> {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
@@ -162,7 +166,7 @@ mod tests {
     #[test]
     fn exit_code_http() {
         let error = StartupError::Http {
-            err: http::Error::ServeFailure {
+            err: server::Error::ServeFailure {
                 err: std::io::Error::new(std::io::ErrorKind::Other, ""),
             },
         };

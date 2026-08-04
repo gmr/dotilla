@@ -69,8 +69,7 @@ impl Error {
 
 /// Opens the database for the given configuration
 pub fn open(config: &Config) -> Result<Database, Error> {
-    let database_path = config.data_directory.join("system.dat");
-    match Database::builder(database_path).open() {
+    match Database::builder(config.data_directory.clone()).open() {
         Ok(db) => Ok(db),
         Err(e) => Err(Error::Open(e)),
     }

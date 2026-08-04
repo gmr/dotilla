@@ -438,6 +438,7 @@ dependencies = [
  "fjall",
  "http-body-util",
  "predicates",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

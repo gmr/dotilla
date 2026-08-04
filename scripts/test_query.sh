@@ -12,3 +12,15 @@ curl -X POST \
     --data "$QUERY" \
     --verbose \
     "http://${HOST}:${PORT}/${DB}" | jq .
+
+curl -X PUT \
+    --verbose \
+    "http://${HOST}:${PORT}/${DB}" | jq .
+
+# Invalid
+
+curl -X POST \
+    -H "Content-Type: text/plain" \
+    --data "$QUERY" \
+    --verbose \
+    "http://${HOST}:${PORT}/~invalid~"

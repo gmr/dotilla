@@ -1,6 +1,7 @@
 use axum::{
     Router,
-    extract::{Path, Request, State},
+    extract::{FromRequestParts, Path, Request, State},
+    http::request::Parts,
     http::{HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Json, Response},
@@ -52,7 +53,7 @@ fn create_router(app_state: Arc<state::AppState>) -> Router {
     Router::new()
         .route("/", get(handle_index))
         .route("/health", get(handle_health))
-        .route("/{db}", post(handle_cypher_query))
+        .route("/{db}", post(handle_cypher_query).put(create_database))
         .fallback(handle_404)
         .layer((
             middleware::from_fn(add_response_headers),
@@ -146,17 +147,38 @@ async fn handle_404(req: Request) -> impl IntoResponse {
 
 #[derive(serde::Deserialize)]
 struct QueryParams {
-    db: String,
+    db: storage::DatabaseName,
+}
+
+async fn create_database(
+    State(app_state): State<Arc<state::AppState>>,
+    ValidatedPath(params): ValidatedPath<QueryParams>,
+) -> impl IntoResponse {
+    let state = app_state.clone();
+    match storage::create_keyspace(&state.db, params.db.to_string()).await {
+        Ok(_) => (StatusCode::CREATED, Json(json!({"created": "ok"}))),
+        Err(err) => {
+            let response = ErrorResponse {
+                type_: "about:blank".to_string(),
+                title: "Database Already Exists".to_string(),
+                status: StatusCode::PRECONDITION_FAILED.as_u16(),
+                detail: format!("Error creating database `{0}`: {1}", params.db, err),
+                instance: params.db.to_string(),
+                hint: None,
+            };
+            (StatusCode::PRECONDITION_FAILED, Json(json!(&response)))
+        }
+    }
 }
 
 async fn handle_cypher_query(
     State(app_state): State<Arc<state::AppState>>,
-    Path(params): Path<QueryParams>,
+    ValidatedPath(params): ValidatedPath<QueryParams>,
     body: String,
 ) -> impl IntoResponse {
     eprintln!("Handling cypher query request for {}", params.db);
     let state = app_state.clone();
-    return match storage::keyspace(&state.db, params.db.clone()).await {
+    return match storage::keyspace(&state.db, params.db.to_string()).await {
         Ok(_keyspace) => {
             eprintln!("Would query in keyspace {:?}: {body:?}", params.db);
             (
@@ -173,7 +195,7 @@ async fn handle_cypher_query(
                 title: "Not Found".to_string(),
                 status: StatusCode::NOT_FOUND.as_u16(),
                 detail: format!("Error querying database `{0}`: {1}", params.db, err),
-                instance: params.db,
+                instance: params.db.to_string(),
                 hint: Some(hint),
             };
             (StatusCode::NOT_FOUND, Json(json!(&response)))
@@ -192,6 +214,33 @@ struct ErrorResponse {
     instance: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     hint: Option<String>,
+}
+
+pub struct ValidatedPath<T>(pub T);
+
+impl<T, S> FromRequestParts<S> for ValidatedPath<T>
+where
+    T: serde::de::DeserializeOwned + Send,
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        match Path::<T>::from_request_parts(parts, state).await {
+            Ok(Path(value)) => Ok(ValidatedPath(value)),
+            Err(rejection) => {
+                let body = ErrorResponse {
+                    type_: "about:blank".to_string(),
+                    title: "Bad Request".to_string(),
+                    status: StatusCode::BAD_REQUEST.as_u16(),
+                    detail: rejection.to_string(),
+                    instance: parts.uri.path().to_string(),
+                    hint: None,
+                };
+                Err((StatusCode::BAD_REQUEST, Json(body)).into_response())
+            }
+        }
+    }
 }
 
 #[cfg(test)]

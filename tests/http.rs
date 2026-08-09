@@ -3,7 +3,7 @@ mod utils;
 use crate::utils::*;
 use dotilla::http::server;
 use dotilla::state::AppState;
-use dotilla::{config, cypher, state};
+use dotilla::{config, cypher, state, storage};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -24,8 +24,10 @@ fn test_app_state() -> Arc<AppState> {
     };
     Arc::new(state::AppState {
         cancellation_token: CancellationToken::new(),
-        config,
+        config: config.clone(),
         cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
+        registry: storage::database::registry(),
+        system: storage::database::open_system(&config).unwrap(),
     })
 }
 

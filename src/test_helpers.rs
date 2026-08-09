@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::{config, cypher, state};
+use crate::{config, cypher, state, storage};
 
 pub fn build_state() -> Arc<state::AppState> {
     let data_dir = tempfile::tempdir().unwrap();
@@ -19,7 +19,9 @@ pub fn build_state() -> Arc<state::AppState> {
     };
     Arc::new(state::AppState {
         cancellation_token: CancellationToken::new(),
-        config,
+        config: config.clone(),
         cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
+        registry: storage::database::registry(),
+        system: storage::database::open_system(&config).unwrap(),
     })
 }

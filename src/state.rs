@@ -12,4 +12,10 @@ pub struct AppState {
 
     /// Used to parse Cypher queries
     pub cypher_parser: Mutex<Parser>,
+
+    /// The registry of databases
+    pub registry: crate::storage::types::Registry,
+
+    /// The handle to the system database
+    pub system: fjall::Database,
 }

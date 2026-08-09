@@ -9,7 +9,7 @@ use tokio::signal;
 use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 
-use dotilla::{config, cypher, http::server, state};
+use dotilla::{config, cypher, http::server, state, storage};
 
 /// Entry point for the application.
 #[tokio::main]
@@ -25,17 +25,17 @@ async fn main() {
         println!("Debug mode enabled");
     }
 
-    /*
-    let database = match storage::open(&config) {
+    let system = match storage::database::open_system(&config) {
         Ok(db) => db,
         Err(err) => startup_failure(StartupError::Storage { err }),
     };
-     */
 
     let app_state = Arc::new(state::AppState {
         cancellation_token: CancellationToken::new(),
         config: config.clone(),
         cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
+        registry: storage::database::registry(),
+        system,
     });
 
     let mut join_set = JoinSet::new();
@@ -92,14 +92,13 @@ enum StartupError {
         #[from]
         err: server::Error,
     },
-    /*
+
     /// Error opening the database
     #[error("Database storage error: {err}")]
     Storage {
         #[from]
-        err: storage::Error,
+        err: storage::database::Error,
     },
-     */
 }
 
 impl StartupError {
@@ -109,7 +108,7 @@ impl StartupError {
             StartupError::Config { err } => err.exit_code(),
             StartupError::Http { err } => err.exit_code(),
             StartupError::Task { .. } => 1,
-            // StartupError::Storage { err } => err.exit_code(),
+            StartupError::Storage { err } => err.exit_code(),
         }
     }
 }

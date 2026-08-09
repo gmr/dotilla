@@ -6,6 +6,7 @@ use dotilla::config;
 use dotilla::cypher::build_cypher_parser;
 use dotilla::http::server;
 use dotilla::state::AppState;
+use dotilla::storage::database;
 use predicates::prelude::*;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr};
@@ -47,14 +48,15 @@ fn main_exits_4_on_invalid_data_directory() {
 }
 
 #[tokio::test]
-async fn main_exits_6_database_error() {
+async fn main_exits_10_database_error() {
     let cfg = write_config_with_ephemeral_port();
     let config_data = config::load(cfg.path.clone()).unwrap();
     let app_state = Arc::new(AppState {
         cancellation_token: CancellationToken::new(),
         cypher_parser: Mutex::new(build_cypher_parser().unwrap()),
         config: config_data.clone(),
-        // db: storage::open(&config_data).unwrap(),
+        registry: database::registry(),
+        system: database::open_system(&config_data).unwrap(),
     });
     let port = cfg.port.unwrap();
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
@@ -67,6 +69,6 @@ async fn main_exits_6_database_error() {
         .arg(&cfg.path)
         .assert()
         .failure()
-        .code(6);
+        .code(10);
     first_server.abort();
 }

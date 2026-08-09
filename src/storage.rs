@@ -1,5 +1,2 @@
-/*
-mod database;
-mod encoding;
-*/
+pub mod database;
 pub mod types;

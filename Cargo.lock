@@ -1922,6 +1922,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shellexpand",
+ "strum 0.26.3",
  "tempfile",
  "thiserror",
  "tokio",

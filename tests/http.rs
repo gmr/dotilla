@@ -21,6 +21,7 @@ fn test_app_state() -> Arc<AppState> {
         default_locale: "und".to_string(),
         listen_address: ip_addr,
         port: port,
+        sync_mode: config::SyncMode::Buffer,
     };
     Arc::new(state::AppState {
         cancellation_token: CancellationToken::new(),

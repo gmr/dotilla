@@ -3,6 +3,7 @@ use std::fs;
 use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use strum::{Display, EnumString};
 use thiserror::Error;
 
 /// Load the configuration from a TOML file, validating it against the schema.
@@ -39,6 +40,21 @@ pub struct Config {
 
     #[serde(default = "default_locale")]
     pub default_locale: String,
+
+    #[serde(default = "default_sync_mode")]
+    pub sync_mode: SyncMode,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            data_directory: default_data_directory(),
+            listen_address: default_listen_address(),
+            port: default_port(),
+            default_locale: default_locale(),
+            sync_mode: default_sync_mode(),
+        }
+    }
 }
 
 fn default_data_directory() -> PathBuf {
@@ -55,6 +71,24 @@ fn default_port() -> u16 {
 
 fn default_locale() -> String {
     "und".to_string()
+}
+
+fn default_sync_mode() -> SyncMode {
+    SyncMode::All
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Display, EnumString, PartialEq)]
+pub enum SyncMode {
+    #[default]
+    #[serde(rename = "buffer")]
+    #[strum(serialize = "buffer")]
+    Buffer,
+    #[serde(rename = "data")]
+    #[strum(serialize = "data")]
+    Data,
+    #[serde(rename = "all")]
+    #[strum(serialize = "all")]
+    All,
 }
 
 /// Errors that can occur when loading the configuration.
@@ -265,6 +299,7 @@ mod tests {
             listen_address: default_listen_address(),
             default_locale: "und".to_string(),
             port: default_port(),
+            sync_mode: default_sync_mode(),
         };
         assert!(validate(&config).is_ok());
     }
@@ -278,6 +313,7 @@ mod tests {
             listen_address: default_listen_address(),
             default_locale: "und".to_string(),
             port: default_port(),
+            sync_mode: default_sync_mode(),
         };
         match validate(&config) {
             Err(Error::DataDirectory { path }) => assert_eq!(path, tmp_file.path()),

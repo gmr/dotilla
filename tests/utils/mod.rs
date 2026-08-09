@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use dotilla::config;
 use std::io::Write;
 use std::path::PathBuf;
 use tempfile::tempdir;
@@ -19,11 +20,13 @@ pub fn write_config(port: Option<u16>) -> TestConfig {
     if let Some(port) = port {
         writeln!(file, "port = {}", port).expect("failed to write config file");
     }
+    writeln!(file, "sync_mode = \"buffer\"").expect("failed to write config file");
     TestConfig {
         _tempdir: tmp_dir,
         _file: file,
         path: config_path,
         port,
+        _sync_mode: config::SyncMode::Buffer,
     }
 }
 
@@ -37,4 +40,5 @@ pub struct TestConfig {
     _file: std::fs::File,
     pub path: PathBuf,
     pub port: Option<u16>,
+    _sync_mode: config::SyncMode,
 }

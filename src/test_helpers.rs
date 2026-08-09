@@ -16,6 +16,7 @@ pub fn build_state() -> Arc<state::AppState> {
         listen_address: ip_addr,
         port,
         default_locale: "und".to_string(),
+        sync_mode: config::SyncMode::All,
     };
     Arc::new(state::AppState {
         cancellation_token: CancellationToken::new(),

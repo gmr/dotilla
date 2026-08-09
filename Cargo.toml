@@ -21,7 +21,7 @@ toml = "1.1.4"
 tower-http = { version = "0.7.0", features = ["timeout"] }
 tree-sitter = "0.26.11"
 tree-sitter-cypher = "0.2.6"
-
+strum = { version = "0.26", features = ["derive"] }
 
 [dev-dependencies]
 assert_cmd = "2"

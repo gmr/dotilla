@@ -25,7 +25,7 @@ async fn main() {
         println!("Debug mode enabled");
     }
 
-    let db = match storage::database::initialize(&config) {
+    let db = match storage::database::initialize(&config).await {
         Ok(db) => db,
         Err(err) => startup_failure(StartupError::Database { err }),
     };

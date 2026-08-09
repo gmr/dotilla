@@ -55,7 +55,7 @@ async fn main_exits_10_database_error() {
         cancellation_token: CancellationToken::new(),
         cypher_parser: Mutex::new(build_cypher_parser().unwrap()),
         config: config_data.clone(),
-        db: database::initialize(&config_data).unwrap(),
+        db: database::initialize(&config_data).await.unwrap(),
     });
     let port = cfg.port.unwrap();
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));

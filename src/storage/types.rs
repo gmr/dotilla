@@ -3,19 +3,13 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::hash::Hash;
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(try_from = "String")]
-pub struct DatabaseName(String);
+pub struct DatabaseName(pub String);
 
 impl Display for DatabaseName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl Hash for DatabaseName {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
     }
 }
 
@@ -32,8 +26,8 @@ impl TryFrom<String> for DatabaseName {
     }
 }
 
-impl PartialEq for DatabaseName {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+impl DatabaseName {
+    pub fn new(name: &str) -> Self {
+        DatabaseName::try_from(name.to_string()).unwrap()
     }
 }

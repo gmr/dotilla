@@ -22,6 +22,6 @@ pub async fn build_state() -> Arc<state::AppState> {
         cancellation_token: CancellationToken::new(),
         config: config.clone(),
         cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
-        db: storage::database::initialize(&config).unwrap(),
+        db: storage::database::initialize(&config).await.unwrap(),
     })
 }

@@ -117,7 +117,7 @@ mod tests {
         let addr = SocketAddr::new(ip_addr, 0);
         let listener = bind_listener(addr).await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let app_state = crate::test_helpers::build_state();
+        let app_state = crate::test_helpers::build_state().await;
 
         let task = tokio::spawn(async move {
             match start_http_server(listener, app_state.clone()).await {

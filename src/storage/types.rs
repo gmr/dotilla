@@ -1,18 +1,7 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
-use std::sync::Mutex;
-
-pub struct Registry {
-    pub databases: Mutex<HashMap<DatabaseName, Database>>,
-}
-
-pub struct Database {
-    pub graph: fjall::Database,
-    pub vector: lancedb::Connection,
-}
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(try_from = "String")]

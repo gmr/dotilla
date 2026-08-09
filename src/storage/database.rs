@@ -1,16 +1,8 @@
 use fjall::Database;
-use std::collections::HashMap;
-use std::sync::Mutex;
 use thiserror::Error;
 
-pub fn registry() -> super::types::Registry {
-    super::types::Registry {
-        databases: Mutex::new(HashMap::new()),
-    }
-}
-
-pub fn open_system(config: &crate::config::Config) -> Result<fjall::Database, Error> {
-    let path = config.data_directory.clone().join("system");
+pub fn initialize(config: &crate::config::Config) -> Result<fjall::Database, Error> {
+    let path = config.data_directory.clone().join("data");
     match Database::builder(path).open() {
         Ok(db) => Ok(db),
         Err(e) => Err(Error::Open(e)),

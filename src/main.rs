@@ -25,17 +25,16 @@ async fn main() {
         println!("Debug mode enabled");
     }
 
-    let system = match storage::database::open_system(&config) {
+    let db = match storage::database::initialize(&config) {
         Ok(db) => db,
-        Err(err) => startup_failure(StartupError::Storage { err }),
+        Err(err) => startup_failure(StartupError::Database { err }),
     };
 
     let app_state = Arc::new(state::AppState {
         cancellation_token: CancellationToken::new(),
         config: config.clone(),
         cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
-        registry: storage::database::registry(),
-        system,
+        db,
     });
 
     let mut join_set = JoinSet::new();
@@ -94,8 +93,8 @@ enum StartupError {
     },
 
     /// Error opening the database
-    #[error("Database storage error: {err}")]
-    Storage {
+    #[error("Graph database initialization error: {err}")]
+    Database {
         #[from]
         err: storage::database::Error,
     },
@@ -108,7 +107,7 @@ impl StartupError {
             StartupError::Config { err } => err.exit_code(),
             StartupError::Http { err } => err.exit_code(),
             StartupError::Task { .. } => 1,
-            StartupError::Storage { err } => err.exit_code(),
+            StartupError::Database { err } => err.exit_code(),
         }
     }
 }

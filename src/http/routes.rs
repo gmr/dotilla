@@ -87,7 +87,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_health() {
-        let app_state = crate::test_helpers::build_state();
+        let app_state = crate::test_helpers::build_state().await;
         let router = create(app_state.clone());
         let req = Request::get("/health").body(Body::empty()).unwrap();
         let response = router.oneshot(req).await.unwrap();
@@ -96,7 +96,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_index() {
-        let app_state = crate::test_helpers::build_state();
+        let app_state = crate::test_helpers::build_state().await;
         let router = create(app_state.clone());
         let req = Request::get("/").body(Body::empty()).unwrap();
         let response = router.oneshot(req).await.unwrap();
@@ -109,7 +109,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_file_not_found() {
-        let app_state = crate::test_helpers::build_state();
+        let app_state = crate::test_helpers::build_state().await;
         let router = create(app_state.clone());
         let req = Request::get("/not_found/foo").body(Body::empty()).unwrap();
         let response = router.oneshot(req).await.unwrap();

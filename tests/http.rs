@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
 
-fn test_app_state() -> Arc<AppState> {
+async fn test_app_state() -> Arc<AppState> {
     let data_dir = tempfile::tempdir().unwrap();
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let addr = SocketAddr::new(ip_addr, 0);
@@ -27,14 +27,13 @@ fn test_app_state() -> Arc<AppState> {
         cancellation_token: CancellationToken::new(),
         config: config.clone(),
         cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
-        registry: storage::database::registry(),
-        system: storage::database::open_system(&config).unwrap(),
+        db: storage::database::initialize(&config).unwrap(),
     })
 }
 
 #[tokio::test]
 async fn test_serve_ok() {
-    let app_state = test_app_state();
+    let app_state = test_app_state().await;
     let port = get_ephemeral_port();
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let task = tokio::spawn(server::serve(ip_addr, port, app_state.clone()));
@@ -51,7 +50,7 @@ async fn test_serve_ok() {
 
 #[tokio::test]
 async fn test_serve_error() {
-    let app_state_one = test_app_state();
+    let app_state_one = test_app_state().await;
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let port = get_ephemeral_port();
     let first_task = tokio::spawn(async move {
@@ -60,7 +59,7 @@ async fn test_serve_error() {
             Err(_) => assert!(false),
         }
     });
-    let app_state_two = test_app_state();
+    let app_state_two = test_app_state().await;
     tokio::spawn(async move {
         match server::serve(ip_addr, port, app_state_two).await {
             Ok(_) => assert!(false),

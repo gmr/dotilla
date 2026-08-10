@@ -1,6 +1,7 @@
+use axum::body::Body;
+use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::Json;
-use axum::{extract::State, response::IntoResponse};
+use axum::response::{IntoResponse, Json, Response};
 use std::sync::Arc;
 
 use crate::{state, storage, storage::database};
@@ -10,40 +11,34 @@ pub struct QueryParams {
     db: storage::types::DatabaseName,
 }
 
-pub async fn create(
+pub async fn delete(
     State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    match database::create_namespace(&state.db, &params.db.to_string()).await {
-        Ok(()) => (StatusCode::CREATED, Json("{\"ok\": true}").into_response()),
-        Err(err) => {
-            let response = error_response(err);
-            (response.0, response.1.into_response()) // (StatusCode, Response<Body>)
-        }
+    match storage::database::delete_namespace(&state.db, &params.db.to_string()).await {
+        Ok(_) => (StatusCode::NO_CONTENT, "".into_response()),
+        Err(err) => error_response(err),
     }
 }
 
-pub async fn delete(
-    State(_app_state): State<Arc<state::AppState>>,
+pub async fn get(
+    State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    super::utils::not_implemented(
-        format!("Error deleting database `{0}`: Not Implemented", params.db),
-        params.db.to_string(),
-    )
+    match storage::database::get_namespace(&state.db, &params.db.to_string()).await {
+        Ok(details) => (StatusCode::OK, Json(details).into_response()),
+        Err(err) => error_response(err),
+    }
 }
 
 pub async fn head(
-    State(_app_state): State<Arc<state::AppState>>,
+    State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    super::utils::not_implemented(
-        format!(
-            "Error retrieving database information `{0}`: Not Implemented",
-            params.db
-        ),
-        params.db.to_string(),
-    )
+    match storage::database::get_namespace(&state.db, &params.db.to_string()).await {
+        Ok(_) => (StatusCode::OK, "".into_response()),
+        Err(err) => error_response(err),
+    }
 }
 
 pub async fn post(
@@ -57,7 +52,42 @@ pub async fn post(
     )
 }
 
-fn error_response(error: database::Error) -> (StatusCode, Json<super::types::ErrorResponse>) {
+#[derive(serde::Deserialize)]
+
+pub struct CreateBody {
+    pub locale: Option<String>,
+    pub case_insensitive: Option<bool>,
+    pub collation_strength: Option<database::CollationStrength>,
+}
+
+#[derive(serde::Serialize)]
+struct CreateOkResponse {
+    ok: bool,
+}
+
+pub async fn put(
+    State(state): State<Arc<state::AppState>>,
+    super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
+    payload: Json<CreateBody>,
+) -> impl IntoResponse {
+    match database::create_namespace(
+        &state.db,
+        &params.db.to_string(),
+        payload.locale.clone(),
+        payload.case_insensitive,
+        payload.collation_strength.clone(),
+    )
+    .await
+    {
+        Ok(()) => (
+            StatusCode::CREATED,
+            Json(CreateOkResponse { ok: true }).into_response(),
+        ),
+        Err(err) => error_response(err),
+    }
+}
+
+fn error_response(error: database::Error) -> (StatusCode, Response<Body>) {
     match error {
         database::Error::AlreadyExists { namespace } => super::utils::error_response(
             "Bad Request".to_string(),
@@ -78,6 +108,16 @@ fn error_response(error: database::Error) -> (StatusCode, Json<super::types::Err
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal database error".to_string(),
             "".to_string(),
+            None,
+        ),
+        database::Error::LoadConfig { namespace, err } => super::utils::error_response(
+            "Internal Server Error".to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "Failed to load config for database `{}`: {}",
+                namespace, err
+            ),
+            namespace.to_string(),
             None,
         ),
         database::Error::NotFound { namespace } => super::utils::error_response(

@@ -22,9 +22,10 @@ pub fn create(app_state: Arc<state::AppState>) -> Router {
         .route(
             "/{db}",
             delete(super::database::delete)
+                .get(super::database::get)
                 .head(super::database::head)
                 .post(super::database::post)
-                .put(super::database::create),
+                .put(super::database::put),
         )
         .fallback(handle_404)
         .layer((

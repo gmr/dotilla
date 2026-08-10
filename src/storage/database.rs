@@ -30,7 +30,7 @@ pub async fn info(database: &Database) -> Result<DatabaseInfo, Error> {
     let journal_count = database.db.journal_count();
     let mut namespaces: Vec<NamespaceDetails> = Vec::new();
     for namespace in super::namespace::list(database) {
-        if let Ok(details) = super::namespace::get(database, &namespace.to_string()).await {
+        if let Ok(details) = super::namespace::get(database, namespace.as_ref()).await {
             namespaces.push(details)
         };
     }

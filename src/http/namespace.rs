@@ -11,7 +11,7 @@ pub async fn delete(
     State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    match namespace::delete(&state.db, &params.namespace.to_string()).await {
+    match namespace::delete(&state.db, params.namespace.as_ref()).await {
         Ok(_) => (StatusCode::NO_CONTENT, "".into_response()),
         Err(err) => error_response(err),
     }
@@ -22,7 +22,7 @@ pub async fn get(
     State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    match namespace::get(&state.db, &params.namespace.to_string()).await {
+    match namespace::get(&state.db, params.namespace.as_ref()).await {
         Ok(details) => (StatusCode::OK, Json(details).into_response()),
         Err(err) => error_response(err),
     }
@@ -33,7 +33,7 @@ pub async fn head(
     State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    match namespace::get(&state.db, &params.namespace.to_string()).await {
+    match namespace::get(&state.db, params.namespace.as_ref()).await {
         Ok(_) => (StatusCode::OK, "".into_response()),
         Err(err) => error_response(err),
     }
@@ -70,7 +70,7 @@ pub async fn put(
 ) -> impl IntoResponse {
     match namespace::create(
         &state.db,
-        &params.namespace.to_string(),
+        params.namespace.as_ref(),
         payload.locale.clone(),
         payload.case_insensitive,
         payload.collation_strength.clone(),

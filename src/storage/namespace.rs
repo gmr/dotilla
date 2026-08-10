@@ -30,18 +30,21 @@ pub async fn create(
             database.system.insert(name, serialized_config).unwrap();
 
             // Add the namespace to the in-memory namespace cache
-            database.namespaces.lock().unwrap().insert(
-                NamespaceName::new(name),
-                Namespace {
-                    name: NamespaceName::new(name),
-                    locale: config.locale,
-                    case_insensitive: config.case_insensitive,
-                    collation_strength: config.collation_strength,
-                    nodes: keyspaces.nodes,
-                    edges: keyspaces.edges,
-                    vectors: keyspaces.vectors,
-                },
-            );
+            let namespace_name = NamespaceName::try_from(name.to_string()).unwrap();
+            let namespace = Namespace {
+                name: namespace_name.clone(),
+                locale: config.locale,
+                case_insensitive: config.case_insensitive,
+                collation_strength: config.collation_strength,
+                nodes: keyspaces.nodes,
+                edges: keyspaces.edges,
+                vectors: keyspaces.vectors,
+            };
+            database
+                .namespaces
+                .lock()
+                .unwrap()
+                .insert(namespace_name, namespace);
             Ok(())
         }
     }
@@ -68,7 +71,7 @@ pub async fn delete(database: &Database, name: &str) -> Result<(), Error> {
                 .namespaces
                 .lock()
                 .unwrap()
-                .remove(&NamespaceName::new(name))
+                .remove(&NamespaceName::try_from(name.to_string()).unwrap())
                 .ok_or_else(|| Error::NotFound {
                     namespace: name.to_string(),
                 })?;
@@ -124,7 +127,7 @@ pub async fn fetch(
             let config: NamespaceConfig = serde_json::from_slice(&bytes).unwrap();
             let keyspaces = open_keyspaces(db, name).await?;
             Ok(Namespace {
-                name: NamespaceName::new(name),
+                name: NamespaceName::try_from(name.to_string()).unwrap(),
                 locale: config.locale,
                 case_insensitive: config.case_insensitive,
                 collation_strength: config.collation_strength,
@@ -148,7 +151,7 @@ pub async fn fetch_all(
         let key_bytes = guard.key().unwrap();
         let key = std::str::from_utf8(&key_bytes).expect("valid utf8");
         namespaces.insert(
-            NamespaceName::new(key),
+            NamespaceName::try_from(key.to_string()).unwrap(),
             fetch(db, system, key).await.unwrap(),
         );
     }

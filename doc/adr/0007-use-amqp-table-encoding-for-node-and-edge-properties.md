@@ -1,4 +1,4 @@
-# 10. Use AMQP table encoding for node and edge properties
+# 7. Use AMQP table encoding for node and edge properties
 
 Date: 2026-08-04
 

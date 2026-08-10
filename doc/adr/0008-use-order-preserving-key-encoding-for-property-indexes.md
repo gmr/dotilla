@@ -1,4 +1,4 @@
-# 11. Use order-preserving key encoding for property indexes
+# 8. Use order-preserving key encoding for property indexes
 
 Date: 2026-08-04
 

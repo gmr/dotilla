@@ -1,4 +1,4 @@
-# 7. Use edgebert for creating the vectors
+# 6. Use edgebert for creating the vectors
 
 Date: 2026-08-03
 

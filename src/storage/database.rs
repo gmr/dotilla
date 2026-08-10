@@ -23,6 +23,16 @@ pub async fn initialize(config: &crate::config::Config) -> Result<Database, Erro
     })
 }
 
+pub fn all_namespaces(database: &Database) -> Vec<super::types::DatabaseName> {
+    database
+        .namespaces
+        .lock()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect::<Vec<super::types::DatabaseName>>()
+}
+
 pub async fn create_namespace(
     database: &Database,
     name: &str,
@@ -57,7 +67,6 @@ pub async fn create_namespace(
                 collation_strength: cfg.collation_strength,
                 nodes: create_keyspace(database.db.clone(), "nodes").await?,
                 edges: create_keyspace(database.db.clone(), "edges").await?,
-                labels: create_keyspace(database.db.clone(), "labels").await?,
                 vectors: create_keyspace(database.db.clone(), "vectors").await?,
             }
         }
@@ -81,7 +90,6 @@ pub async fn delete_namespace(database: &Database, name: &str) -> Result<(), Err
     .await?;
     database.db.delete_keyspace(namespace.edges)?;
     database.db.delete_keyspace(namespace.nodes)?;
-    database.db.delete_keyspace(namespace.labels)?;
     database.db.delete_keyspace(namespace.vectors)?;
     database
         .namespaces
@@ -99,6 +107,7 @@ pub async fn delete_namespace(database: &Database, name: &str) -> Result<(), Err
 pub struct KeyspaceDetails {
     pub size_on_disk: u64,
     pub item_count: usize,
+    pub wasted_space: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -139,15 +148,41 @@ pub async fn get_namespace(database: &Database, name: &str) -> Result<NamespaceD
         nodes: KeyspaceDetails {
             size_on_disk: nodes.disk_space(),
             item_count: nodes.approximate_len(),
+            wasted_space: nodes.fragmented_blob_bytes(),
         },
         edges: KeyspaceDetails {
             size_on_disk: edges.disk_space(),
             item_count: edges.approximate_len(),
+            wasted_space: edges.fragmented_blob_bytes(),
         },
         vectors: KeyspaceDetails {
             size_on_disk: vectors.disk_space(),
             item_count: vectors.approximate_len(),
+            wasted_space: vectors.fragmented_blob_bytes(),
         },
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct DbInfo {
+    pub size_on_disk: u64,
+    pub journal_count: usize,
+    pub namespaces: Vec<NamespaceDetails>,
+}
+
+pub async fn db_info(database: &Database) -> Result<DbInfo, Error> {
+    let size_on_disk = database.db.disk_space().unwrap();
+    let journal_count = database.db.journal_count();
+
+    let mut namespaces: Vec<NamespaceDetails> = Vec::new();
+    for namespace in all_namespaces(database) {
+        let details = get_namespace(database, &namespace.to_string()).await?;
+        namespaces.push(details);
+    }
+    Ok(DbInfo {
+        size_on_disk,
+        journal_count,
+        namespaces,
     })
 }
 
@@ -179,7 +214,6 @@ async fn fetch_namespace(
                 collation_strength: config.collation_strength,
                 nodes: open_namespace(db.clone(), &names.nodes)?,
                 edges: open_namespace(db.clone(), &names.edges)?,
-                labels: open_namespace(db.clone(), &names.labels)?,
                 vectors: open_namespace(db.clone(), &names.vectors)?,
             })
         }
@@ -213,7 +247,6 @@ fn keyspace_names(name: &str) -> KeyspaceNames {
     KeyspaceNames {
         nodes: format!("{}\0nodes", namespace),
         edges: format!("{}\0edges", namespace),
-        labels: format!("{}\0labels", namespace),
         vectors: format!("{}\0vectors", namespace),
     }
 }
@@ -241,7 +274,6 @@ pub struct Namespace {
     pub collation_strength: CollationStrength,
     pub nodes: fjall::Keyspace,
     pub edges: fjall::Keyspace,
-    pub labels: fjall::Keyspace,
     pub vectors: fjall::Keyspace,
 }
 
@@ -266,7 +298,6 @@ pub struct NamespaceConfig {
 struct KeyspaceNames {
     nodes: String,
     edges: String,
-    labels: String,
     vectors: String,
 }
 

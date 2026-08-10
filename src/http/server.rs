@@ -126,7 +126,7 @@ mod tests {
             }
         });
         sleep(Duration::from_millis(500)).await;
-        let resp = reqwest::get(format!("http://{}/health", addr))
+        let resp = reqwest::get(format!("http://{}/_health", addr))
             .await
             .unwrap();
         assert!(resp.status().is_success());

@@ -18,7 +18,9 @@ use crate::state;
 pub fn create(app_state: Arc<state::AppState>) -> Router {
     Router::new()
         .route("/", get(handle_index))
-        .route("/health", get(handle_health))
+        .route("/_all_dbs", get(super::database::all_dbs))
+        .route("/_db_info", get(super::database::db_info))
+        .route("/_health", get(handle_health))
         .route(
             "/{db}",
             delete(super::database::delete)
@@ -90,7 +92,7 @@ mod tests {
     async fn test_router_health() {
         let app_state = crate::test_helpers::build_state().await;
         let router = create(app_state.clone());
-        let req = Request::get("/health").body(Body::empty()).unwrap();
+        let req = Request::get("/_health").body(Body::empty()).unwrap();
         let response = router.oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
     }

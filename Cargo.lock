@@ -457,7 +457,6 @@ dependencies = [
  "fjall",
  "http-body-util",
  "icu",
- "once_cell",
  "predicates",
  "regex",
  "reqwest",

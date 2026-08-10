@@ -46,6 +46,10 @@ http_delete() {
 	http_req $1 -X DELETE
 }
 
+# DBs and Info
+http_get "_all_dbs"
+http_get "_db_info"
+
 # Invalid database
 http_head "~invalid~"
 http_get "~invalid~"
@@ -58,6 +62,10 @@ http_put "test" "{}"
 http_head "test"
 http_get "test"
 http_put "test" "{}"
+
+http_get "_all_dbs"
+http_get "_db_info"
+
 http_delete "test"
 http_head "test"
 http_get "test"

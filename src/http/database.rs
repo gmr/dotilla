@@ -1,10 +1,9 @@
+use crate::{state, storage, storage::database};
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
 use std::sync::Arc;
-
-use crate::{state, storage, storage::database};
 
 #[derive(serde::Deserialize)]
 pub struct QueryParams {
@@ -50,6 +49,20 @@ pub async fn post(
         format!("Error querying database `{0}`: Not Implemented", params.db),
         params.db.to_string(),
     )
+}
+
+pub async fn all_dbs(State(state): State<Arc<state::AppState>>) -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(storage::database::all_namespaces(&state.db)).into_response(),
+    )
+}
+
+pub async fn db_info(State(state): State<Arc<state::AppState>>) -> impl IntoResponse {
+    match storage::database::db_info(&state.db).await {
+        Ok(info) => (StatusCode::OK, Json(info).into_response()),
+        Err(err) => error_response(err),
+    }
 }
 
 #[derive(serde::Deserialize)]

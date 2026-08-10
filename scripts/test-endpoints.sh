@@ -47,7 +47,7 @@ http_delete() {
 }
 
 # DBs and Info
-http_get "_all_dbs"
+http_get "_all_namespaces"
 http_get "_db_info"
 
 # Invalid database
@@ -63,7 +63,7 @@ http_head "test"
 http_get "test"
 http_put "test" "{}"
 
-http_get "_all_dbs"
+http_get "_all_namespaces"
 http_get "_db_info"
 
 http_delete "test"

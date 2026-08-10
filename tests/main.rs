@@ -48,7 +48,7 @@ fn main_exits_4_on_invalid_data_directory() {
 }
 
 #[tokio::test]
-async fn main_exits_10_database_error() {
+async fn main_exits_11_database_error() {
     let cfg = write_config_with_ephemeral_port();
     let config_data = config::load(cfg.path.clone()).unwrap();
     let app_state = Arc::new(AppState {
@@ -68,6 +68,6 @@ async fn main_exits_10_database_error() {
         .arg(&cfg.path)
         .assert()
         .failure()
-        .code(10);
+        .code(11);
     first_server.abort();
 }

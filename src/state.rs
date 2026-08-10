@@ -14,5 +14,5 @@ pub struct AppState {
     pub cypher_parser: Mutex<Parser>,
 
     /// The handle to the database system
-    pub db: crate::storage::database::Database,
+    pub db: crate::storage::types::Database,
 }

@@ -18,16 +18,16 @@ use crate::state;
 pub fn create(app_state: Arc<state::AppState>) -> Router {
     Router::new()
         .route("/", get(handle_index))
-        .route("/_all_dbs", get(super::database::all_dbs))
-        .route("/_db_info", get(super::database::db_info))
+        .route("/_all_namespaces", get(super::namespace::list))
+        .route("/_db_info", get(super::database::info))
         .route("/_health", get(handle_health))
         .route(
-            "/{db}",
-            delete(super::database::delete)
-                .get(super::database::get)
-                .head(super::database::head)
-                .post(super::database::post)
-                .put(super::database::put),
+            "/{namespace}",
+            delete(super::namespace::delete)
+                .get(super::namespace::get)
+                .head(super::namespace::head)
+                .post(super::namespace::post)
+                .put(super::namespace::put),
         )
         .fallback(handle_404)
         .layer((
@@ -54,15 +54,16 @@ async fn handle_health() -> Json<Value> {
 
 async fn handle_404(req: Request) -> impl IntoResponse {
     let path = req.uri().path().to_string();
-    let response = super::types::ErrorResponse {
-        type_: "about:blank".to_string(),
-        title: "Not Found".to_string(),
-        status: StatusCode::NOT_FOUND.as_u16(),
-        detail: format!("The requested resource {path:?} does not exist."),
-        hint: None,
-        instance: path,
-    };
-    (StatusCode::NOT_FOUND, Json(json!(&response)))
+    (
+        StatusCode::NOT_FOUND,
+        super::utils::error_response(
+            StatusCode::NOT_FOUND.to_string(),
+            StatusCode::NOT_FOUND,
+            format!("The requested resource {path:?} does not exist."),
+            path,
+            None,
+        ),
+    )
 }
 
 // --- Middleware ---
@@ -120,7 +121,7 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let body: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["type"], "about:blank".to_string());
-        assert_eq!(body["title"], "Not Found".to_string());
+        assert_eq!(body["title"], StatusCode::NOT_FOUND.to_string());
         assert_eq!(body["status"], StatusCode::NOT_FOUND.as_u16());
         assert_eq!(
             body["detail"],

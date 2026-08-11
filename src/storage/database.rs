@@ -28,6 +28,8 @@ pub async fn initialize(config: &crate::config::Config) -> Result<Database, Erro
 pub async fn info(database: &Database) -> Result<DatabaseInfo, Error> {
     let size_on_disk = database.db.disk_space().unwrap();
     let journal_count = database.db.journal_count();
+    let keyspace_count = database.db.keyspace_count();
+    let write_buffer_size = database.db.write_buffer_size();
     let mut namespaces: Vec<NamespaceDetails> = Vec::new();
     for namespace in super::namespace::list(database) {
         if let Ok(details) = super::namespace::get(database, namespace.as_ref()).await {
@@ -37,6 +39,8 @@ pub async fn info(database: &Database) -> Result<DatabaseInfo, Error> {
     Ok(DatabaseInfo {
         size_on_disk,
         journal_count,
+        keyspace_count,
+        write_buffer_size,
         namespaces,
     })
 }

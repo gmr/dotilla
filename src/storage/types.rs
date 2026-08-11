@@ -28,6 +28,8 @@ pub struct Database {
 pub struct DatabaseInfo {
     pub size_on_disk: u64,
     pub journal_count: usize,
+    pub keyspace_count: usize,
+    pub write_buffer_size: u64,
     pub namespaces: Vec<NamespaceDetails>,
 }
 

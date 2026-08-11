@@ -70,14 +70,14 @@ fn encode(value: &PropertyValue) -> Bytes {
         }
         PropertyValue::Table(t) => buf.extend_from_slice(table(t).as_ref()),
         PropertyValue::Timestamp(v) => {
+            let duration = match v.duration_since(std::time::UNIX_EPOCH) {
+                Ok(d) => d.as_secs(),
+                Err(_) => 0, // @TODO: This is wrong but we need to refactor to raise errors
+            };
             buf.put_u8(b'T');
-            buf.put_u64(
-                v.to_owned()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            );
+            buf.put_u64(duration);
         }
+        // @TODO: Unsigned ints should raise when they are negative
         PropertyValue::UInt8(v) => {
             buf.put_u8(b'B');
             buf.put_u8(*v);

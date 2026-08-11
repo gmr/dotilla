@@ -453,6 +453,7 @@ version = "0.1.0"
 dependencies = [
  "assert_cmd",
  "axum",
+ "bytes",
  "clap",
  "fjall",
  "http-body-util",

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::sync::Mutex;
+use std::time::SystemTime;
 
 #[non_exhaustive]
 #[repr(u8)]
@@ -69,7 +70,7 @@ macro_rules! validated_name {
     ($name:ident, $label:literal, $max:literal, |$c:ident, $first:ident| $rule:expr) => {
         #[derive(Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd, serde::Deserialize)]
         #[serde(try_from = "String")]
-        pub struct $name(String);
+        pub struct $name(pub String);
 
         impl $name {
             pub const MAX_LEN: usize = $max;
@@ -191,14 +192,6 @@ macro_rules! validated_name {
     };
 }
 
-validated_name!(Identifier, "Identifier", 256, |c, first| {
-    if first {
-        c.is_ascii_alphabetic() || c == '_'
-    } else {
-        c.is_ascii_alphanumeric() || c == '_'
-    }
-});
-
 pub struct Keyspaces {
     pub nodes: fjall::Keyspace,
     pub edges: fjall::Keyspace,
@@ -217,6 +210,14 @@ pub struct KeyspaceDetails {
     pub item_count: usize,
     pub wasted_space: u64,
 }
+
+validated_name!(Label, "Label", 16383, |c, first| {
+    if first {
+        c.is_ascii_alphabetic() || c == '_'
+    } else {
+        c.is_ascii_alphanumeric() || c == '_'
+    }
+});
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NamespaceConfig {
@@ -252,31 +253,77 @@ pub struct Namespace {
     pub vectors: fjall::Keyspace,
 }
 
-#[derive(Clone, Debug)]
-pub enum PropertyValue {
-    Str(String),
-    Int(i64),
-    Bool(bool),
-    Float(f64),
+validated_name!(PropertyName, "PropertyName", 128, |c, first| {
+    if first {
+        c.is_ascii_alphabetic() || c == '_'
+    } else {
+        c.is_ascii_alphanumeric() || c == '_'
+    }
+});
+
+impl TryFrom<&PropertyValue> for PropertyName {
+    type Error = String;
+    fn try_from(value: &PropertyValue) -> Result<Self, Self::Error> {
+        let s = value.as_str();
+        if s.is_empty() {
+            return Err("PropertyName cannot be empty".to_string());
+        }
+        Ok(Self::try_from(s).unwrap())
+    }
 }
 
-#[derive(Clone, Debug)]
-pub struct Properties(HashMap<Identifier, PropertyValue>);
+#[derive(Clone, Debug, PartialEq)]
+pub enum PropertyValue {
+    Array(Vec<PropertyValue>),
+    Bool(bool),
+    Int8(i8),
+    Int16(i16),
+    Int32(i32),
+    Int64(i64),
+    Float(f64),
+    None,
+    String(String),
+    Table(Properties),
+    Timestamp(SystemTime),
+    UInt8(u8),
+    UInt16(u16),
+    UInt32(u32),
+    UInt64(u64),
+}
+
+impl PropertyValue {
+    pub fn as_str(&self) -> &str {
+        match self {
+            PropertyValue::String(s) => s.as_str(),
+            _ => "",
+        }
+    }
+
+    pub fn as_properties(&self) -> Option<&Properties> {
+        match self {
+            PropertyValue::Table(props) => Some(props),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Properties(HashMap<PropertyName, PropertyValue>);
 
 impl Properties {
     pub fn new() -> Self {
         Self(HashMap::new())
     }
 
-    pub fn insert(&mut self, name: Identifier, value: PropertyValue) {
+    pub fn insert(&mut self, name: PropertyName, value: PropertyValue) {
         self.0.insert(name, value);
     }
 
-    pub fn get(&self, name: &Identifier) -> Option<&PropertyValue> {
+    pub fn get(&self, name: &PropertyName) -> Option<&PropertyValue> {
         self.0.get(name)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&Identifier, &PropertyValue)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&PropertyName, &PropertyValue)> {
         self.0.iter()
     }
 }
@@ -290,7 +337,7 @@ impl Default for Properties {
 #[derive(Clone, Debug)]
 pub struct Node {
     pub id: u64,
-    pub labels: Vec<Identifier>,
+    pub labels: Vec<Label>,
     pub properties: Properties,
 }
 
@@ -299,6 +346,6 @@ pub struct Edge {
     pub id: u64,
     pub source: u64,
     pub target: u64,
-    pub labels: Vec<Identifier>,
+    pub labels: Vec<Label>,
     pub properties: Properties,
 }

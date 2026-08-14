@@ -3,6 +3,7 @@ use thiserror::Error;
 use tokio::task::spawn_blocking;
 
 use super::types::*;
+use super::{avro, database};
 
 pub async fn create(
     database: &Database,
@@ -10,7 +11,7 @@ pub async fn create(
     locale: Option<String>,
     case_insensitive: Option<bool>,
     collation_strength: Option<CollationStrength>,
-) -> Result<(), Error> {
+) -> Result<Namespace, Error> {
     // Check if the namespace already exists and add it if it doesn't
     match fetch(&database.db, &database.system, name).await {
         Ok(_) => Err(Error::AlreadyExists {
@@ -36,16 +37,18 @@ pub async fn create(
                 locale: config.locale,
                 case_insensitive: config.case_insensitive,
                 collation_strength: config.collation_strength,
+                system: keyspaces.system,
                 nodes: keyspaces.nodes,
                 edges: keyspaces.edges,
+                labels: keyspaces.labels,
                 vectors: keyspaces.vectors,
             };
             database
                 .namespaces
                 .lock()
                 .unwrap()
-                .insert(namespace_name, namespace);
-            Ok(())
+                .insert(namespace_name, namespace.clone());
+            Ok(namespace)
         }
     }
 }
@@ -59,12 +62,20 @@ pub async fn delete(database: &Database, name: &str) -> Result<(), Error> {
     let keyspaces = open_keyspaces(&database.db, name).await?;
 
     // Build the futures to delete the keyspaces
+    let system_future = super::database::delete_keyspace(&database.db, keyspaces.system);
     let edges_future = super::database::delete_keyspace(&database.db, keyspaces.edges);
     let nodes_future = super::database::delete_keyspace(&database.db, keyspaces.nodes);
+    let labels_future = super::database::delete_keyspace(&database.db, keyspaces.labels);
     let vectors_future = super::database::delete_keyspace(&database.db, keyspaces.vectors);
 
     // Delete the keyspaces
-    match tokio::try_join!(edges_future, nodes_future, vectors_future) {
+    match tokio::try_join!(
+        system_future,
+        edges_future,
+        nodes_future,
+        labels_future,
+        vectors_future
+    ) {
         Ok(_) => {
             // Delete the namespace from the database namespace hashmap
             database
@@ -80,7 +91,7 @@ pub async fn delete(database: &Database, name: &str) -> Result<(), Error> {
             database.system.remove(name).unwrap();
             Ok(())
         }
-        Err(err) => Err(Error::Database { err: Box::new(err) }),
+        Err(err) => Err(Error::Database(err)),
     }
 }
 
@@ -93,6 +104,11 @@ pub async fn get(database: &Database, name: &str) -> Result<NamespaceDetails, Er
         locale: namespace.locale.clone(),
         case_insensitive: namespace.case_insensitive,
         collation_strength: namespace.collation_strength,
+        system: KeyspaceDetails {
+            size_on_disk: keyspaces.system.disk_space(),
+            item_count: keyspaces.system.approximate_len(),
+            wasted_space: keyspaces.system.fragmented_blob_bytes(),
+        },
         nodes: KeyspaceDetails {
             size_on_disk: keyspaces.nodes.disk_space(),
             item_count: keyspaces.nodes.approximate_len(),
@@ -102,6 +118,11 @@ pub async fn get(database: &Database, name: &str) -> Result<NamespaceDetails, Er
             size_on_disk: keyspaces.edges.disk_space(),
             item_count: keyspaces.edges.approximate_len(),
             wasted_space: keyspaces.edges.fragmented_blob_bytes(),
+        },
+        labels: KeyspaceDetails {
+            size_on_disk: keyspaces.labels.disk_space(),
+            item_count: keyspaces.labels.approximate_len(),
+            wasted_space: keyspaces.labels.fragmented_blob_bytes(),
         },
         vectors: KeyspaceDetails {
             size_on_disk: keyspaces.vectors.disk_space(),
@@ -131,8 +152,10 @@ pub async fn fetch(
                 locale: config.locale,
                 case_insensitive: config.case_insensitive,
                 collation_strength: config.collation_strength,
+                system: keyspaces.system,
                 nodes: keyspaces.nodes,
                 edges: keyspaces.edges,
+                labels: keyspaces.labels,
                 vectors: keyspaces.vectors,
             })
         }
@@ -169,31 +192,61 @@ pub fn list(database: &Database) -> Vec<NamespaceName> {
         .collect::<Vec<NamespaceName>>()
 }
 
+/// Get the next ID for a keyspace in a namespace
+pub async fn get_next_id(namespace: &super::types::Namespace, keyspace: &str) -> u64 {
+    let key = format!("{keyspace}_id");
+    let id = match namespace.system.get(&key) {
+        Ok(Some(value)) => {
+            let decoded: Value = avro::decode(&value).unwrap();
+            match decoded.as_u64() {
+                Some(id) => id + 1,
+                None => 0,
+            }
+        }
+        _ => 0,
+    };
+    namespace
+        .system
+        .insert(&key, avro::encode(&Value::UInt64(id)).unwrap())
+        .unwrap();
+    id
+}
+
 // Internal Methods
 
 /// Return struct of the keyspace names for a namespace
 pub fn keyspace_names(name: &str) -> KeyspaceNames {
     let namespace = name.to_string();
     KeyspaceNames {
-        nodes: format!("{}\0nodes", namespace),
-        edges: format!("{}\0edges", namespace),
-        vectors: format!("{}\0vectors", namespace),
+        system: format!("{}_system", namespace),
+        nodes: format!("{}_nodes", namespace),
+        edges: format!("{}_edges", namespace),
+        labels: format!("{}_labels", namespace),
+        vectors: format!("{}_vectors", namespace),
     }
 }
 
 pub async fn open_keyspaces(db: &fjall::Database, name: &str) -> Result<Keyspaces, Error> {
     let names = keyspace_names(name);
+    let system_future = super::database::open_keyspace(db, &names.system);
     let nodes_future = super::database::open_keyspace(db, &names.nodes);
     let edges_future = super::database::open_keyspace(db, &names.edges);
+    let labels_future = super::database::open_keyspace(db, &names.labels);
     let vectors_future = super::database::open_keyspace(db, &names.vectors);
-    match tokio::try_join!(nodes_future, edges_future, vectors_future) {
-        Ok((nodes, edges, vectors)) => Ok(Keyspaces {
-            nodes,
-            edges,
-            vectors,
-        }),
-        Err(err) => Err(Error::Database { err: Box::new(err) }),
-    }
+    let (system, nodes, edges, labels, vectors) = tokio::try_join!(
+        system_future,
+        nodes_future,
+        edges_future,
+        labels_future,
+        vectors_future
+    )?;
+    Ok(Keyspaces {
+        system,
+        nodes,
+        edges,
+        labels,
+        vectors,
+    })
 }
 
 /// Errors that can occur when loading the configuration.
@@ -202,8 +255,8 @@ pub enum Error {
     #[error("Namespace already exists")]
     AlreadyExists { namespace: String },
 
-    #[error("Internal error")]
-    Database { err: Box<super::database::Error> },
+    #[error("Internal database error")]
+    Database(#[from] database::Error),
 
     #[error("Failed to load namespace config")]
     LoadConfig {
@@ -220,6 +273,29 @@ pub enum Error {
     #[error("Failed to save namespaces")]
     Save { err: fjall::Error },
 
-    #[error("Internal database error")]
+    #[error("System task error")]
     System { err: tokio::task::JoinError },
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    use crate::storage::database;
+    use crate::test_helpers::build_state;
+
+    #[tokio::test]
+    async fn test_create_get_delete_node() {
+        let state = build_state().await;
+        let db = database::initialize(&state.config).await.unwrap();
+        create(&db, "test", None, None, None).await.unwrap();
+        let ns = fetch(&db.db, &db.system, "test").await.unwrap();
+        let id = get_next_id(&ns, "nodes").await;
+        assert!(id == 0);
+        let id = get_next_id(&ns, "nodes").await;
+        assert!(id == 1);
+        let id = get_next_id(&ns, "nodes").await;
+        assert!(id == 2);
+    }
 }

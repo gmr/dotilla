@@ -21,7 +21,7 @@ pub async fn initialize(config: &crate::config::Config) -> Result<Database, Erro
             default_locale: config.default_locale.clone(),
             namespaces: Mutex::new(namespaces),
         }),
-        Err(err) => Err(Error::System(err)),
+        Err(_) => Err(Error::System),
     }
 }
 
@@ -78,7 +78,7 @@ pub enum Error {
     Internal(#[from] fjall::Error),
 
     #[error("System error")]
-    System(#[from] super::namespace::Error),
+    System,
 }
 
 impl Error {
@@ -87,7 +87,7 @@ impl Error {
         match self {
             Error::IO { .. } => 0, // Non-exiting error
             Error::Internal { .. } => 11,
-            Error::System { .. } => 10,
+            Error::System => 10,
         }
     }
 }

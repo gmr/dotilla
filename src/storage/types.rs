@@ -177,14 +177,18 @@ pub struct Edge {
 }
 
 pub struct Keyspaces {
+    pub system: fjall::Keyspace,
     pub nodes: fjall::Keyspace,
     pub edges: fjall::Keyspace,
+    pub labels: fjall::Keyspace,
     pub vectors: fjall::Keyspace,
 }
 
 pub struct KeyspaceNames {
+    pub system: String,
     pub nodes: String,
     pub edges: String,
+    pub labels: String,
     pub vectors: String,
 }
 
@@ -217,8 +221,10 @@ pub struct NamespaceDetails {
     pub locale: String,
     pub case_insensitive: bool,
     pub collation_strength: CollationStrength,
+    pub system: KeyspaceDetails,
     pub nodes: KeyspaceDetails,
     pub edges: KeyspaceDetails,
+    pub labels: KeyspaceDetails,
     pub vectors: KeyspaceDetails,
 }
 
@@ -233,8 +239,10 @@ pub struct Namespace {
     pub locale: String,
     pub case_insensitive: bool,
     pub collation_strength: CollationStrength,
+    pub system: fjall::Keyspace,
     pub nodes: fjall::Keyspace,
     pub edges: fjall::Keyspace,
+    pub labels: fjall::Keyspace,
     pub vectors: fjall::Keyspace,
 }
 
@@ -270,6 +278,13 @@ impl Value {
         match self {
             Value::String(s) => s.as_str(),
             _ => "",
+        }
+    }
+
+    pub fn as_u64(&self) -> Option<u64> {
+        match self {
+            Value::UInt64(u) => Some(*u),
+            _ => None,
         }
     }
 }

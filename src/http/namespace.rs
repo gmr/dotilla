@@ -77,7 +77,7 @@ pub async fn put(
     )
     .await
     {
-        Ok(()) => (
+        Ok(_) => (
             StatusCode::CREATED,
             Json(CreateOkResponse { ok: true }).into_response(),
         ),
@@ -115,7 +115,7 @@ fn error_response(error: namespace::Error) -> (StatusCode, Response<Body>) {
             namespace.to_string(),
             None,
         ),
-        namespace::Error::Database { err: _err } => super::utils::error_response(
+        namespace::Error::Database(_err) => super::utils::error_response(
             StatusCode::INTERNAL_SERVER_ERROR.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal database error".to_string(),

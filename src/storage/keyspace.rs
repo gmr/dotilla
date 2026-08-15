@@ -26,17 +26,17 @@ impl Names {
     }
 }
 
-#[derive(Clone)]
-pub struct Keyspace {
-    pub name: String,
-    pub handle: fjall::Keyspace,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct Details {
     pub size_on_disk: u64,
     pub item_count: usize,
     pub wasted_space: u64,
+}
+
+#[derive(Clone)]
+pub struct Keyspace {
+    pub name: String,
+    pub handle: fjall::Keyspace,
 }
 
 impl Keyspace {

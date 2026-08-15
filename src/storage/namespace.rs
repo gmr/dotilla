@@ -2,6 +2,7 @@ use apache_avro::AvroSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 // Re-export the NamespaceName as Name
 pub use super::types::NamespaceName as Name;
@@ -58,6 +59,13 @@ pub struct Details {
     pub vectors: keyspace::Details,
 }
 
+pub struct UniqueIds {
+    nodes: AtomicU64,
+    edges: AtomicU64,
+    labels: AtomicU64,
+    vectors: AtomicU64,
+}
+
 /// Namespace for a database with handles to the keyspaces to the different keyspace types
 pub struct Namespace {
     pub name: types::NamespaceName,
@@ -70,6 +78,7 @@ pub struct Namespace {
     pub edges: keyspace::Keyspace,
     pub labels: keyspace::Keyspace,
     pub vectors: keyspace::Keyspace,
+    pub last_ids: UniqueIds,
 }
 
 impl Namespace {
@@ -96,6 +105,7 @@ impl Namespace {
                 };
                 config.save(database, name).await?;
                 let keyspaces = keyspace::Keyspaces::open(database, name).await?;
+                let last_ids = load_last_ids(&keyspaces.system).await?;
                 Ok(Self {
                     name: namespace_name,
                     locale: config.locale,
@@ -107,6 +117,7 @@ impl Namespace {
                     edges: keyspaces.edges,
                     labels: keyspaces.labels,
                     vectors: keyspaces.vectors,
+                    last_ids,
                 })
             }
             Err(err) => Err(err),
@@ -170,6 +181,7 @@ impl Namespace {
         let namespace_name = Name::try_from(name.to_string())?;
         let config = Config::load(database, name).await?;
         let keyspaces = keyspace::Keyspaces::open(database, name).await?;
+        let last_ids = load_last_ids(&keyspaces.system).await?;
         Ok(Self {
             name: namespace_name,
             locale: config.locale,
@@ -181,23 +193,48 @@ impl Namespace {
             edges: keyspaces.edges,
             labels: keyspaces.labels,
             vectors: keyspaces.vectors,
+            last_ids,
         })
     }
 
     /// Returns the next available ID for the given name, incrementing the internal counter.
     pub async fn get_next_id(&self, name: &str) -> Result<u64, errors::Error> {
-        let key = format!("{name}_id");
-        let id: types::Value = match self.system.get_item(&key).await {
-            Ok(types::Value::UInt64(id)) => types::Value::UInt64(id + 1),
-            Ok(_) => types::Value::UInt64(0),
-            Err(errors::Error::NotFound) => types::Value::UInt64(0),
-            Err(err) => return Err(err),
+        let (key, id) = match name {
+            "nodes" => {
+                let value = self
+                    .last_ids
+                    .nodes
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                ("nodes_id".to_string(), value)
+            }
+            "edges" => {
+                let value = self
+                    .last_ids
+                    .edges
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                ("edges_id".to_string(), value)
+            }
+            "labels" => {
+                let value = self
+                    .last_ids
+                    .labels
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                ("labels_id".to_string(), value)
+            }
+            "vectors" => {
+                let value = self
+                    .last_ids
+                    .vectors
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                ("vectors_id".to_string(), value)
+            }
+            _ => {
+                return Err(errors::Error::ValueError);
+            }
         };
-        self.system.put_item(&key, &id).await?;
-        match id.as_u64() {
-            Some(id) => Ok(id),
-            None => Err(errors::Error::ValueError),
-        }
+        let value = types::Value::UInt64(id + 1);
+        self.system.put_item(&key, &value).await?;
+        Ok(value.as_u64().unwrap())
     }
 }
 
@@ -214,11 +251,31 @@ pub async fn load_all(
     Ok(namespaces)
 }
 
+async fn load_id(system: &keyspace::Keyspace, key: &str) -> Result<u64, errors::Error> {
+    let value = match system.get_item::<types::Value>(key).await {
+        Ok(value) => value,
+        Err(errors::Error::NotFound) => types::Value::UInt64(0),
+        Err(error) => return Err(error),
+    };
+    Ok(value.as_u64().unwrap())
+}
+
+async fn load_last_ids(system: &keyspace::Keyspace) -> Result<UniqueIds, errors::Error> {
+    Ok(UniqueIds {
+        nodes: AtomicU64::new(load_id(system, "nodes_id").await?),
+        edges: AtomicU64::new(load_id(system, "edges_id").await?),
+        labels: AtomicU64::new(load_id(system, "labels_id").await?),
+        vectors: AtomicU64::new(load_id(system, "vectors_id").await?),
+    })
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
     use crate::test_helpers::TestContext;
+    use futures::future::try_join_all;
+    use std::collections::HashSet;
     use test_context::test_context;
 
     #[test_context(TestContext)]
@@ -229,10 +286,26 @@ mod tests {
             .await
             .unwrap();
         let id = ns.get_next_id("nodes").await.unwrap();
-        assert!(id == 0);
-        let id = ns.get_next_id("nodes").await.unwrap();
         assert!(id == 1);
         let id = ns.get_next_id("nodes").await.unwrap();
         assert!(id == 2);
+        let id = ns.get_next_id("nodes").await.unwrap();
+        assert!(id == 3);
+    }
+
+    #[test_context(TestContext)]
+    #[tokio::test]
+    async fn test_get_next_id_concurrency(ctx: &mut TestContext) {
+        let ns = Namespace::create(&ctx.state.database, "test", None, None, None)
+            .await
+            .unwrap();
+        let mut futures = vec![];
+        for _ in 0..100 {
+            futures.push(ns.get_next_id("nodes"));
+        }
+        let results = try_join_all(futures).await.unwrap();
+        assert!(results.len() == 100);
+        let unique: HashSet<_> = results.iter().copied().collect();
+        assert_eq!(unique.len(), results.len());
     }
 }

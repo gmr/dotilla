@@ -82,7 +82,8 @@ impl Namespace {
         collation_strength: Option<CollationStrength>,
     ) -> Result<Self, errors::Error> {
         let namespace_name = Name::try_from(name.to_string())?;
-        match Self::get(database, name).await {
+
+        match Config::load(database, name).await {
             Ok(_) => Err(errors::Error::NamespaceExists {
                 namespace: name.to_string(),
             }),

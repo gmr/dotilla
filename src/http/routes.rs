@@ -59,7 +59,7 @@ async fn handle_404(req: Request) -> impl IntoResponse {
         super::utils::error_response(
             StatusCode::NOT_FOUND.to_string(),
             StatusCode::NOT_FOUND,
-            format!("The requested resource {path:?} does not exist."),
+            "The requested resource does not exist.".to_string(),
             path,
             None,
         ),
@@ -87,21 +87,24 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use http_body_util::BodyExt;
+    use test_context::test_context;
     use tower::ServiceExt;
 
+    use crate::test_helpers::TestContext;
+
+    #[test_context(TestContext)]
     #[tokio::test]
-    async fn test_router_health() {
-        let app_state = crate::test_helpers::build_state().await;
-        let router = create(app_state.clone());
+    async fn test_router_health(ctx: &mut TestContext) {
+        let router = create(ctx.state.clone());
         let req = Request::get("/_health").body(Body::empty()).unwrap();
         let response = router.oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    #[test_context(TestContext)]
     #[tokio::test]
-    async fn test_router_index() {
-        let app_state = crate::test_helpers::build_state().await;
-        let router = create(app_state.clone());
+    async fn test_router_index(ctx: &mut TestContext) {
+        let router = create(ctx.state.clone());
         let req = Request::get("/").body(Body::empty()).unwrap();
         let response = router.oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -111,10 +114,10 @@ mod tests {
         assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
     }
 
+    #[test_context(TestContext)]
     #[tokio::test]
-    async fn test_router_file_not_found() {
-        let app_state = crate::test_helpers::build_state().await;
-        let router = create(app_state.clone());
+    async fn test_router_file_not_found(ctx: &mut TestContext) {
+        let router = create(ctx.state.clone());
         let req = Request::get("/not_found/foo").body(Body::empty()).unwrap();
         let response = router.oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -125,10 +128,7 @@ mod tests {
         assert_eq!(body["status"], StatusCode::NOT_FOUND.as_u16());
         assert_eq!(
             body["detail"],
-            format!(
-                "The requested resource {path:?} does not exist.",
-                path = "/not_found/foo"
-            )
+            "The requested resource does not exist.".to_string()
         );
         assert_eq!(body["instance"], "/not_found/foo".to_string());
     }

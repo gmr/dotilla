@@ -1,6 +1,14 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::Mutex;
+use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tree_sitter::Parser;
+
+use crate::http::server;
+use crate::storage::{database, errors, namespace};
+use crate::{config, cypher};
 
 /// Used to carry the runtime state of the app across modules and requests
 pub struct AppState {
@@ -14,5 +22,101 @@ pub struct AppState {
     pub cypher_parser: Mutex<Parser>,
 
     /// The handle to the database system
-    pub db: crate::storage::types::Database,
+    pub database: Arc<database::Database>,
+
+    /// The handle to the namespace cache
+    pub namespaces: Mutex<HashMap<namespace::Name, namespace::Namespace>>,
+}
+
+impl AppState {
+    pub async fn initialize(config_path: PathBuf) -> Result<Arc<Self>, StartupError> {
+        let config = match config::load(config_path) {
+            Ok(config) => config,
+            Err(err) => return Err(StartupError::Config { err }),
+        };
+
+        let db = match database::Database::initialize(&config).await {
+            Ok(db) => Arc::new(db),
+            Err(err) => return Err(StartupError::Database { err }),
+        };
+
+        let namespaces = namespace::load_all(&db).await?;
+
+        Ok(Arc::new(Self {
+            cancellation_token: CancellationToken::new(),
+            config: config.clone(),
+            cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
+            database: db,
+            namespaces: Mutex::new(namespaces),
+        }))
+    }
+
+    pub fn add_namespace(&self, ns: namespace::Namespace) {
+        self.namespaces.lock().unwrap().insert(ns.name.clone(), ns);
+    }
+
+    pub fn list_namespaces(&self) -> Vec<String> {
+        self.namespaces
+            .lock()
+            .unwrap()
+            .keys()
+            .map(|k| k.to_string())
+            .collect()
+    }
+
+    pub fn remove_namespace(&self, ns: namespace::Namespace) {
+        self.namespaces.lock().unwrap().remove(&ns.name);
+    }
+}
+
+/// Errors that can occur during startup.
+#[derive(Debug, Error)]
+pub enum StartupError {
+    /// Error reading or validating the configuration file
+    #[error("Configuration error: {err}")]
+    Config {
+        #[from]
+        err: config::Error,
+    },
+
+    /// Error spawning multiple tasks
+    #[error("Error spawning multiple tasks: {err}")]
+    Task {
+        #[from]
+        err: tokio::task::JoinError,
+    },
+
+    /// Error starting the HTTP server
+    #[error("HTTP Server error: {err}")]
+    Http {
+        #[from]
+        err: server::Error,
+    },
+
+    /// Error opening the database
+    #[error("Graph database initialization error: {err}")]
+    Database {
+        #[from]
+        err: database::Error,
+    },
+
+    /// Error loading namespaces
+    #[error("Error loading namespaces: {err}")]
+    Namespaces {
+        #[from]
+        err: errors::Error,
+    },
+}
+
+impl StartupError {
+    /// Returns the exit code for the error.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            StartupError::Config { err } => err.exit_code(),
+            StartupError::Http { err } => err.exit_code(),
+            StartupError::Task { .. } => 1,
+            StartupError::Database { err } => err.exit_code(),
+            StartupError::Namespaces { .. } => 5,
+        }
+    }
 }

@@ -1,34 +1,45 @@
 use apache_avro::{
-    AvroResult, AvroSchema, reader::datum::GenericDatumReader, writer::datum::GenericDatumWriter,
+    AvroSchema, reader::datum::GenericDatumReader, writer::datum::GenericDatumWriter,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-pub fn decode<T>(bytes: &[u8]) -> AvroResult<T>
+use super::errors;
+
+pub fn decode<T>(bytes: &[u8]) -> Result<T, errors::Error>
 where
     T: AvroSchema + DeserializeOwned,
 {
     let mut input = bytes;
     let schema = T::get_schema();
-    let reader = GenericDatumReader::builder(&schema).build()?;
-    reader.read_deser::<T>(&mut input)
+    match GenericDatumReader::builder(&schema).build() {
+        Ok(reader) => match reader.read_deser::<T>(&mut input) {
+            Ok(value) => Ok(value),
+            Err(err) => Err(errors::Error::Decoding { err }),
+        },
+        Err(err) => Err(errors::Error::Decoding { err }),
+    }
 }
 
-pub fn encode<T>(value: &T) -> apache_avro::AvroResult<Vec<u8>>
+pub fn encode<T>(value: &T) -> Result<Vec<u8>, errors::Error>
 where
     T: AvroSchema + Serialize,
 {
     let schema = T::get_schema();
-
-    GenericDatumWriter::builder(&schema)
-        .build()?
-        .write_ser_to_vec(value)
+    match GenericDatumWriter::builder(&schema).build() {
+        Ok(writer) => match writer.write_ser_to_vec(value) {
+            Ok(bytes) => Ok(bytes),
+            Err(err) => Err(errors::Error::Encoding { err }),
+        },
+        Err(err) => Err(errors::Error::Encoding { err }),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::types::{Label, Node, Table, Value};
+    use crate::storage::graph::Node;
+    use crate::storage::types::{Label, Table, Value};
 
     #[test]
     fn test_node_roundtrip() {

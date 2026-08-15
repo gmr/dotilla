@@ -1,9 +1,9 @@
 use apache_avro::{AvroSchema, Uuid, schema, serde::AvroSchemaComponent};
+use convert_case::{Case, Casing};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display};
 use std::hash::Hash;
-use std::sync::Mutex;
 use thiserror::Error;
 
 /// Macro for validating a string against a set of rules.
@@ -137,68 +137,6 @@ macro_rules! validated_string {
     };
 }
 
-#[non_exhaustive]
-#[repr(u8)]
-#[derive(Clone, Debug, Deserialize, Serialize, AvroSchema)]
-#[avro(namespace = "org.dotilla")]
-pub enum CollationStrength {
-    Primary = 0,
-    Secondary = 1,
-    Tertiary = 2,
-    Quaternary = 3,
-    Identical = 7,
-}
-
-/// Top level database handle with the core database and system keyspace, and a map of namespaces.
-pub struct Database {
-    pub db: fjall::Database,
-    pub system: fjall::Keyspace,
-    pub default_locale: String,
-    pub namespaces: Mutex<HashMap<NamespaceName, Namespace>>,
-}
-
-#[derive(serde::Serialize)]
-pub struct DatabaseInfo {
-    pub size_on_disk: u64,
-    pub journal_count: usize,
-    pub keyspace_count: usize,
-    pub write_buffer_size: u64,
-    pub namespaces: Vec<NamespaceDetails>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, AvroSchema)]
-#[avro(namespace = "org.dotilla")]
-pub struct Edge {
-    pub id: u64,
-    pub source: u64,
-    pub target: u64,
-    pub labels: Vec<Label>,
-    pub properties: Table,
-}
-
-pub struct Keyspaces {
-    pub system: fjall::Keyspace,
-    pub nodes: fjall::Keyspace,
-    pub edges: fjall::Keyspace,
-    pub labels: fjall::Keyspace,
-    pub vectors: fjall::Keyspace,
-}
-
-pub struct KeyspaceNames {
-    pub system: String,
-    pub nodes: String,
-    pub edges: String,
-    pub labels: String,
-    pub vectors: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct KeyspaceDetails {
-    pub size_on_disk: u64,
-    pub item_count: usize,
-    pub wasted_space: u64,
-}
-
 validated_string!(Label, "Label", 16383, |c, first| {
     if first {
         c.is_ascii_alphabetic() || c == '_'
@@ -207,52 +145,9 @@ validated_string!(Label, "Label", 16383, |c, first| {
     }
 });
 
-#[derive(Clone, Debug, Deserialize, Serialize, AvroSchema)]
-#[avro(namespace = "org.dotilla")]
-pub struct NamespaceConfig {
-    pub locale: String,
-    pub case_insensitive: bool,
-    pub collation_strength: CollationStrength,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct NamespaceDetails {
-    pub name: String,
-    pub locale: String,
-    pub case_insensitive: bool,
-    pub collation_strength: CollationStrength,
-    pub system: KeyspaceDetails,
-    pub nodes: KeyspaceDetails,
-    pub edges: KeyspaceDetails,
-    pub labels: KeyspaceDetails,
-    pub vectors: KeyspaceDetails,
-}
-
 validated_string!(NamespaceName, "namespace name", 256, |c, _first| {
     c.is_ascii_alphanumeric() || c == '_' || c == '-'
 });
-
-/// Namespace for a database with handles to the keyspaces to the different keyspace types
-#[derive(Clone)]
-pub struct Namespace {
-    pub name: NamespaceName,
-    pub locale: String,
-    pub case_insensitive: bool,
-    pub collation_strength: CollationStrength,
-    pub system: fjall::Keyspace,
-    pub nodes: fjall::Keyspace,
-    pub edges: fjall::Keyspace,
-    pub labels: fjall::Keyspace,
-    pub vectors: fjall::Keyspace,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, AvroSchema)]
-#[avro(namespace = "org.dotilla")]
-pub struct Node {
-    pub id: u64,
-    pub labels: Vec<Label>,
-    pub properties: Table,
-}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, AvroSchema)]
 #[avro(namespace = "org.dotilla")]
@@ -349,13 +244,17 @@ pub enum ValueError {
 impl Display for ValueError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Chars { kind, value } => {
-                write!(f, "{kind} `{value}` has unsupported characters.")
+            Self::Chars { kind, .. } => {
+                let kind = kind.to_case(Case::Title);
+                write!(f, "{kind} has unsupported characters")
             }
             Self::TooLong { kind, len, max } => {
-                write!(f, "{kind} is {len} bytes, exceeds max of {max}.")
+                write!(f, "{kind} is {len} bytes, exceeds max of {max}")
             }
-            Self::Empty { kind } => write!(f, "{kind} must not be empty."),
+            Self::Empty { kind } => {
+                let kind = kind.to_case(Case::Title);
+                write!(f, "{kind} must not be empty")
+            }
         }
     }
 }

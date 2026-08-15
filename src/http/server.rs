@@ -79,7 +79,10 @@ mod tests {
 
     use super::*;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use test_context::test_context;
     use tokio::time::{Duration, sleep};
+
+    use crate::test_helpers::TestContext;
 
     #[tokio::test]
     async fn bind_listener_ok() {
@@ -111,16 +114,17 @@ mod tests {
         sleep(Duration::from_millis(500)).await;
     }
 
+    #[test_context(TestContext)]
     #[tokio::test]
-    async fn start_http_server_ok() {
+    async fn start_http_server_ok(ctx: &mut TestContext) {
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let addr = SocketAddr::new(ip_addr, 0);
         let listener = bind_listener(addr).await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let app_state = crate::test_helpers::build_state().await;
+        let state = ctx.state.clone();
 
         let task = tokio::spawn(async move {
-            match start_http_server(listener, app_state.clone()).await {
+            match start_http_server(listener, state).await {
                 Ok(_) => assert!(true),
                 Err(_) => assert!(false),
             }

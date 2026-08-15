@@ -2,19 +2,13 @@ mod utils;
 
 use crate::utils::*;
 use assert_cmd::Command;
-use dotilla::config;
-use dotilla::cypher::build_cypher_parser;
 use dotilla::http::server;
 use dotilla::state::AppState;
-use dotilla::storage::database;
 use predicates::prelude::*;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::Arc;
-use std::sync::Mutex;
 use tempfile::tempdir;
 use tokio::time::{Duration, sleep};
-use tokio_util::sync::CancellationToken;
 
 #[test]
 fn main_exits_2_on_missing_config() {
@@ -50,13 +44,7 @@ fn main_exits_4_on_invalid_data_directory() {
 #[tokio::test]
 async fn main_exits_11_database_error() {
     let cfg = write_config_with_ephemeral_port();
-    let config_data = config::load(cfg.path.clone()).unwrap();
-    let app_state = Arc::new(AppState {
-        cancellation_token: CancellationToken::new(),
-        cypher_parser: Mutex::new(build_cypher_parser().unwrap()),
-        config: config_data.clone(),
-        db: database::initialize(&config_data).await.unwrap(),
-    });
+    let app_state = AppState::initialize(cfg.path.clone()).await.unwrap();
     let port = cfg.port.unwrap();
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let first_server = tokio::spawn(async move { server::serve(ip_addr, port, app_state).await });

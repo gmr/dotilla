@@ -4,16 +4,23 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
 use std::sync::Arc;
 
-use crate::{state, storage, storage::namespace};
+use crate::{state, storage::errors, storage::namespace};
 
 /// Deletes a namespace
 pub async fn delete(
     State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    match namespace::delete(&state.db, params.namespace.as_ref()).await {
-        Ok(_) => (StatusCode::NO_CONTENT, "".into_response()),
-        Err(err) => error_response(err),
+    let ns = match namespace::Namespace::get(&state.database, params.namespace.as_ref()).await {
+        Ok(ns) => ns,
+        Err(err) => return error_response(err, params.namespace.as_ref()),
+    };
+    match ns.delete().await {
+        Ok(_) => {
+            state.remove_namespace(ns);
+            (StatusCode::NO_CONTENT, "".into_response())
+        }
+        Err(err) => error_response(err, params.namespace.as_ref()),
     }
 }
 
@@ -22,9 +29,12 @@ pub async fn get(
     State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    match namespace::get(&state.db, params.namespace.as_ref()).await {
-        Ok(details) => (StatusCode::OK, Json(details).into_response()),
-        Err(err) => error_response(err),
+    match namespace::Namespace::get(&state.database, params.namespace.as_ref()).await {
+        Ok(ns) => match ns.details().await {
+            Ok(details) => (StatusCode::OK, Json(details).into_response()),
+            Err(err) => error_response(err, params.namespace.as_ref()),
+        },
+        Err(err) => error_response(err, params.namespace.as_ref()),
     }
 }
 
@@ -33,9 +43,9 @@ pub async fn head(
     State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    match namespace::get(&state.db, params.namespace.as_ref()).await {
+    match namespace::Namespace::get(&state.database, params.namespace.as_ref()).await {
         Ok(_) => (StatusCode::OK, "".into_response()),
-        Err(err) => error_response(err),
+        Err(err) => error_response(err, params.namespace.as_ref()),
     }
 }
 
@@ -43,7 +53,7 @@ pub async fn head(
 pub async fn list(State(state): State<Arc<state::AppState>>) -> impl IntoResponse {
     (
         StatusCode::OK,
-        Json(storage::namespace::list(&state.db)).into_response(),
+        Json(state.list_namespaces()).into_response(),
     )
 }
 
@@ -54,10 +64,7 @@ pub async fn post(
     _body: String,
 ) -> impl IntoResponse {
     super::utils::not_implemented(
-        format!(
-            "Error querying database `{0}`: Not Implemented",
-            params.namespace
-        ),
+        "Error querying database: Not Implemented".to_string(),
         params.namespace.to_string(),
     )
 }
@@ -68,8 +75,8 @@ pub async fn put(
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
     payload: Json<CreateBody>,
 ) -> impl IntoResponse {
-    match namespace::create(
-        &state.db,
+    match namespace::Namespace::create(
+        &state.database,
         params.namespace.as_ref(),
         payload.locale.clone(),
         payload.case_insensitive,
@@ -77,18 +84,21 @@ pub async fn put(
     )
     .await
     {
-        Ok(_) => (
-            StatusCode::CREATED,
-            Json(CreateOkResponse { ok: true }).into_response(),
-        ),
-        Err(err) => error_response(err),
+        Ok(ns) => {
+            state.add_namespace(ns);
+            (
+                StatusCode::CREATED,
+                Json(CreateOkResponse { ok: true }).into_response(),
+            )
+        }
+        Err(err) => error_response(err, params.namespace.as_ref()),
     }
 }
 
 /// Query parameters for the namespace endpoints.
 #[derive(serde::Deserialize)]
 pub struct QueryParams {
-    namespace: storage::types::NamespaceName,
+    namespace: namespace::Name,
 }
 
 /// Body for creating a namespace
@@ -96,7 +106,7 @@ pub struct QueryParams {
 pub struct CreateBody {
     pub locale: Option<String>,
     pub case_insensitive: Option<bool>,
-    pub collation_strength: Option<storage::types::CollationStrength>,
+    pub collation_strength: Option<namespace::CollationStrength>,
 }
 
 /// Response body for creating a namespace
@@ -106,58 +116,62 @@ struct CreateOkResponse {
 }
 
 /// Return an error response based on the error returned from the storage layer
-fn error_response(error: namespace::Error) -> (StatusCode, Response<Body>) {
+fn error_response(error: errors::Error, namespace: &str) -> (StatusCode, Response<Body>) {
     match error {
-        namespace::Error::AlreadyExists { namespace } => super::utils::error_response(
-            StatusCode::BAD_REQUEST.to_string(),
-            StatusCode::BAD_REQUEST,
-            format!("Namespace `{}` already exists", namespace),
-            namespace.to_string(),
-            None,
-        ),
-        namespace::Error::Database(_err) => super::utils::error_response(
+        errors::Error::Database(_err) => super::utils::error_response(
             StatusCode::INTERNAL_SERVER_ERROR.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal database error".to_string(),
             "".to_string(),
             None,
         ),
-        namespace::Error::LoadConfig { namespace, err } => super::utils::error_response(
+        errors::Error::Decoding { err } => super::utils::error_response(
             StatusCode::INTERNAL_SERVER_ERROR.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!(
-                "Failed to load config for namespace `{}`: {}",
-                namespace, err
-            ),
+            format!("Failed to decode configuration for namespace: {}", err),
             namespace.to_string(),
             None,
         ),
-        namespace::Error::NotFound { namespace } => super::utils::error_response(
+        errors::Error::Encoding { err } => super::utils::error_response(
+            StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to encode configuration for namespace: {}", err),
+            namespace.to_string(),
+            None,
+        ),
+        errors::Error::IO(err) => super::utils::error_response(
+            StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Internal IO error processing namespace: {}", err),
+            namespace.to_string(),
+            None,
+        ),
+        errors::Error::NamespaceExists { namespace } => super::utils::error_response(
+            StatusCode::BAD_REQUEST.to_string(),
+            StatusCode::BAD_REQUEST,
+            "Namespace already exists".to_string(),
+            namespace.to_string(),
+            None,
+        ),
+        errors::Error::NamespaceInvalidName(err) => super::utils::error_response(
+            StatusCode::BAD_REQUEST.to_string(),
+            StatusCode::BAD_REQUEST,
+            format!("Invalid namespace name: {}", err),
+            namespace.to_string(),
+            None,
+        ),
+        errors::Error::NotFound => super::utils::error_response(
             StatusCode::NOT_FOUND.to_string(),
             StatusCode::NOT_FOUND,
-            format!("Namespace `{}` not found", namespace),
+            "Namespace not found".to_string(),
             namespace.to_string(),
             None,
         ),
-        namespace::Error::Open { err: _err } => super::utils::error_response(
+        _ => super::utils::error_response(
             "Internal Server Error".to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Error opening namespace".to_string(),
-            "".to_string(),
-            None,
-        ),
-        namespace::Error::Save { err: _err } => super::utils::error_response(
-            "Internal Server Error".to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Error saving internal state".to_string(),
-            "".to_string(),
-            None,
-        ),
-        namespace::Error::System { err: _err } => super::utils::error_response(
-            "Internal Server Error".to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Error saving internal state".to_string(),
-            "".to_string(),
+            "Unexpected error".to_string(),
+            namespace.to_string(),
             None,
         ),
     }

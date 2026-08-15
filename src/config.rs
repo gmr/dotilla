@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::net::IpAddr;
@@ -24,7 +24,7 @@ pub fn load(path: impl AsRef<Path>) -> Result<Config, Error> {
 }
 
 /// Schema for the configuration file
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
     /// The data directory where internal files are stored.
     #[serde(default = "default_data_directory")]
@@ -77,7 +77,7 @@ fn default_sync_mode() -> SyncMode {
     SyncMode::All
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Display, EnumString, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Display, EnumString, PartialEq, Serialize)]
 pub enum SyncMode {
     #[default]
     #[serde(rename = "buffer")]

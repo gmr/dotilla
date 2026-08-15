@@ -1,79 +1,73 @@
-use std::sync::Mutex;
 use thiserror::Error;
-use tokio::task::{JoinError, spawn_blocking};
+use tokio::task::spawn_blocking;
 
-use super::types::{Database, DatabaseInfo, NamespaceDetails};
+use super::errors;
+use super::keyspace::Keyspace;
 
-/// Initializes the database and returns a mutex-wrapped database handle.
-pub async fn initialize(config: &crate::config::Config) -> Result<Database, Error> {
-    let db = match fjall::Database::builder(config.data_directory.clone()).open() {
-        Ok(db) => db,
-        Err(err) => return Err(Error::Internal(err)),
-    };
-    let system = match db.keyspace("system", fjall::KeyspaceCreateOptions::default) {
-        Ok(system) => system,
-        Err(err) => return Err(Error::Internal(err)),
-    };
-    match super::namespace::fetch_all(&db, &system).await {
-        Ok(namespaces) => Ok(Database {
-            db,
-            system,
-            default_locale: config.default_locale.clone(),
-            namespaces: Mutex::new(namespaces),
-        }),
-        Err(_) => Err(Error::System),
-    }
+pub struct Database {
+    pub handle: fjall::Database,
+    pub system: Keyspace,
+    pub default_locale: String,
 }
 
-pub async fn info(database: &Database) -> Result<DatabaseInfo, Error> {
-    let size_on_disk = database.db.disk_space().unwrap();
-    let journal_count = database.db.journal_count();
-    let keyspace_count = database.db.keyspace_count();
-    let write_buffer_size = database.db.write_buffer_size();
-    let mut namespaces: Vec<NamespaceDetails> = Vec::new();
-    for namespace in super::namespace::list(database) {
-        if let Ok(details) = super::namespace::get(database, namespace.as_ref()).await {
-            namespaces.push(details)
+impl Database {
+    /// Initializes the database and returns a mutex-wrapped database handle.
+    pub async fn initialize(config: &crate::config::Config) -> Result<Self, Error> {
+        let db = match fjall::Database::builder(config.data_directory.clone()).open() {
+            Ok(db) => db,
+            Err(err) => return Err(Error::Internal(err)),
         };
+        let system = match db.keyspace("system", fjall::KeyspaceCreateOptions::default) {
+            Ok(system) => system,
+            Err(err) => return Err(Error::Internal(err)),
+        };
+        Ok(Self {
+            handle: db,
+            system: Keyspace {
+                name: "system".to_string(),
+                handle: system,
+            },
+            default_locale: config.default_locale.clone(),
+        })
     }
-    Ok(DatabaseInfo {
-        size_on_disk,
-        journal_count,
-        keyspace_count,
-        write_buffer_size,
-        namespaces,
-    })
-}
 
-/// Delete a keyspace from the database
-pub async fn delete_keyspace(db: &fjall::Database, keyspace: fjall::Keyspace) -> Result<(), Error> {
-    let db = db.clone();
-    match spawn_blocking(move || db.delete_keyspace(keyspace)).await {
-        Ok(Ok(_)) => Ok(()),
-        Ok(Err(err)) => Err(Error::Internal(err)),
-        Err(err) => Err(Error::IO(err)),
+    /// Returns the number of journal files in the database.
+    pub async fn journal_count(&self) -> Result<usize, errors::Error> {
+        let handle = self.handle.clone();
+        match spawn_blocking(move || handle.journal_count()).await {
+            Ok(value) => Ok(value),
+            Err(err) => Err(errors::Error::IO(err)),
+        }
     }
-}
 
-/// Open / Create a keyspace in the database
-pub async fn open_keyspace(db: &fjall::Database, name: &str) -> Result<fjall::Keyspace, Error> {
-    let db = db.clone();
-    let namespace = name.to_string();
-    match spawn_blocking(move || db.keyspace(&namespace, fjall::KeyspaceCreateOptions::default))
-        .await
-    {
-        Ok(Ok(keyspace)) => Ok(keyspace),
-        Ok(Err(err)) => Err(Error::Internal(err)),
-        Err(err) => Err(Error::IO(err)),
+    /// Returns the number of keyspaces in the database.
+    pub async fn keyspace_count(&self) -> Result<usize, errors::Error> {
+        let handle = self.handle.clone();
+        match spawn_blocking(move || handle.keyspace_count()).await {
+            Ok(value) => Ok(value),
+            Err(err) => Err(errors::Error::IO(err)),
+        }
+    }
+
+    /// Returns the approximate size of the database on disk.
+    pub async fn size_on_disk(&self) -> Result<u64, errors::Error> {
+        let handle = self.handle.clone();
+        Ok(spawn_blocking(move || handle.disk_space()).await??)
+    }
+
+    /// Returns the approximate size of the write buffer.
+    pub async fn write_buffer_size(&self) -> Result<u64, errors::Error> {
+        let handle = self.handle.clone();
+        match spawn_blocking(move || handle.write_buffer_size()).await {
+            Ok(value) => Ok(value),
+            Err(err) => Err(errors::Error::IO(err)),
+        }
     }
 }
 
 /// Errors that can occur when loading the configuration.
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Failed to execute blocking operation")]
-    IO(#[from] JoinError),
-
     #[error("Internal error")]
     Internal(#[from] fjall::Error),
 
@@ -85,7 +79,6 @@ impl Error {
     /// Map the error to an exit code.
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::IO { .. } => 0, // Non-exiting error
             Error::Internal { .. } => 11,
             Error::System => 10,
         }

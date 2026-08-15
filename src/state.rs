@@ -30,18 +30,13 @@ pub struct AppState {
 
 impl AppState {
     pub async fn initialize(config_path: PathBuf) -> Result<Arc<Self>, StartupError> {
-        let config = match config::load(config_path) {
-            Ok(config) => config,
-            Err(err) => return Err(StartupError::Config { err }),
-        };
-
-        let db = match database::Database::initialize(&config).await {
-            Ok(db) => Arc::new(db),
-            Err(err) => return Err(StartupError::Database { err }),
-        };
-
+        let config = config::load(config_path).map_err(|e| StartupError::Config { err: e })?;
+        let db = Arc::new(
+            database::Database::initialize(&config)
+                .await
+                .map_err(|e| StartupError::Database { err: e })?,
+        );
         let namespaces = namespace::load_all(&db).await?;
-
         Ok(Arc::new(Self {
             cancellation_token: CancellationToken::new(),
             config: config.clone(),

@@ -12,13 +12,9 @@ where
 {
     let mut input = bytes;
     let schema = T::get_schema();
-    match GenericDatumReader::builder(&schema).build() {
-        Ok(reader) => match reader.read_deser::<T>(&mut input) {
-            Ok(value) => Ok(value),
-            Err(err) => Err(errors::Error::Decoding { err }),
-        },
-        Err(err) => Err(errors::Error::Decoding { err }),
-    }
+    let reader = GenericDatumReader::builder(&schema).build()?;
+    let value: T = reader.read_deser(&mut input)?;
+    Ok(value)
 }
 
 pub fn encode<T>(value: &T) -> Result<Vec<u8>, errors::Error>
@@ -26,13 +22,9 @@ where
     T: AvroSchema + Serialize,
 {
     let schema = T::get_schema();
-    match GenericDatumWriter::builder(&schema).build() {
-        Ok(writer) => match writer.write_ser_to_vec(value) {
-            Ok(bytes) => Ok(bytes),
-            Err(err) => Err(errors::Error::Encoding { err }),
-        },
-        Err(err) => Err(errors::Error::Encoding { err }),
-    }
+    let writer = GenericDatumWriter::builder(&schema).build()?;
+    let bytes = writer.write_ser_to_vec(value)?;
+    Ok(bytes)
 }
 
 #[cfg(test)]

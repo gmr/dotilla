@@ -4,14 +4,11 @@ use super::types::ValueError;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("data encoding/decoding error")]
+    Avro(#[from] apache_avro::Error),
+
     #[error("database error")]
     Database(#[from] fjall::Error),
-
-    #[error("data codec decoding error")]
-    Decoding { err: apache_avro::Error },
-
-    #[error("data codec encoding error")]
-    Encoding { err: apache_avro::Error },
 
     #[error("failed to execute blocking operation")]
     IO(#[from] tokio::task::JoinError),

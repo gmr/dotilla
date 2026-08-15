@@ -34,16 +34,16 @@ impl Node {
             labels: labels.to_vec(),
             properties: properties.clone(),
         };
-        ns.nodes.put_item(&format!("{id}"), &node).await?;
+        ns.nodes.put_item(id.to_be_bytes(), &node).await?;
         Ok(node)
     }
 
     pub async fn delete(ns: &namespace::Namespace, id: u64) -> Result<(), errors::Error> {
-        ns.nodes.remove_item(&format!("{id}")).await
+        ns.nodes.remove_item(id.to_be_bytes()).await
     }
 
     pub async fn get(ns: &namespace::Namespace, id: u64) -> Result<Self, errors::Error> {
-        ns.nodes.get_item(&format!("{id}")).await
+        ns.nodes.get_item(id.to_be_bytes()).await
     }
 }
 

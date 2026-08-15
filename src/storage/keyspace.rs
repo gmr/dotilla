@@ -78,13 +78,13 @@ impl Keyspace {
     }
 
     /// Returns the number of items in the keyspace.
-    pub async fn get_item<T>(&self, key: &str) -> Result<T, errors::Error>
+    pub async fn get_item<T>(&self, key: impl AsRef<[u8]>) -> Result<T, errors::Error>
     where
         T: AvroSchema + DeserializeOwned,
     {
-        let key = key.to_string();
         let handle = self.handle.clone();
-        match spawn_blocking(move || handle.get(&key)).await?? {
+        let key = key.as_ref().to_vec();
+        match spawn_blocking(move || handle.get(key)).await?? {
             Some(value) => {
                 let decoded: T = avro::decode(value.as_slice())?;
                 Ok(decoded)
@@ -103,14 +103,14 @@ impl Keyspace {
     }
 
     /// Inserts an item into the keyspace.
-    pub async fn put_item<T>(&self, key: &str, value: &T) -> Result<(), errors::Error>
+    pub async fn put_item<T>(&self, key: impl AsRef<[u8]>, value: &T) -> Result<(), errors::Error>
     where
         T: AvroSchema + Serialize,
     {
         let handle = self.handle.clone();
-        let key = key.to_string();
+        let key = key.as_ref().to_vec();
         let encoded = avro::encode::<T>(value)?;
-        match spawn_blocking(move || handle.insert(&key, encoded)).await {
+        match spawn_blocking(move || handle.insert(key, encoded)).await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(err)) => Err(errors::Error::Database(err)),
             Err(err) => Err(errors::Error::IO(err)),
@@ -118,10 +118,10 @@ impl Keyspace {
     }
 
     /// Removes an item from the keyspace.
-    pub async fn remove_item(&self, key: &str) -> Result<(), errors::Error> {
+    pub async fn remove_item(&self, key: impl AsRef<[u8]>) -> Result<(), errors::Error> {
         let handle = self.handle.clone();
-        let key = key.to_string();
-        match spawn_blocking(move || handle.remove(&key)).await {
+        let key = key.as_ref().to_vec();
+        match spawn_blocking(move || handle.remove(key)).await {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(err)) => Err(errors::Error::Database(err)),
             Err(err) => Err(errors::Error::IO(err)),

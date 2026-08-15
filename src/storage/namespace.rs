@@ -117,7 +117,8 @@ impl Namespace {
     pub async fn delete(&self) -> Result<(), errors::Error> {
         let keyspaces = keyspace::Keyspaces::open(&self.database, &self.name).await?;
         keyspaces.delete(&self.database).await?;
-        self.database.system.remove_item(&self.name).await?;
+        let name = self.name.as_ref();
+        self.database.system.remove_item(name).await?;
         Ok(())
     }
 

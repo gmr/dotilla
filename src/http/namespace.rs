@@ -118,25 +118,18 @@ struct CreateOkResponse {
 /// Return an error response based on the error returned from the storage layer
 fn error_response(error: errors::Error, namespace: &str) -> (StatusCode, Response<Body>) {
     match error {
+        errors::Error::Avro(err) => super::utils::error_response(
+            StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Encoding / decoding error for namespace: {}", err),
+            namespace.to_string(),
+            None,
+        ),
         errors::Error::Database(_err) => super::utils::error_response(
             StatusCode::INTERNAL_SERVER_ERROR.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal database error".to_string(),
             "".to_string(),
-            None,
-        ),
-        errors::Error::Decoding { err } => super::utils::error_response(
-            StatusCode::INTERNAL_SERVER_ERROR.to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to decode configuration for namespace: {}", err),
-            namespace.to_string(),
-            None,
-        ),
-        errors::Error::Encoding { err } => super::utils::error_response(
-            StatusCode::INTERNAL_SERVER_ERROR.to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to encode configuration for namespace: {}", err),
-            namespace.to_string(),
             None,
         ),
         errors::Error::IO(err) => super::utils::error_response(

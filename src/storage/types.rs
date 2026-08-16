@@ -169,16 +169,93 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn as_str(&self) -> &str {
+    pub fn as_bool(&self) -> Option<bool> {
         match self {
-            Value::String(s) => s.as_str(),
-            _ => "",
+            Value::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    pub fn as_int8(&self) -> Option<i8> {
+        match self {
+            Value::Int8(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    pub fn as_int16(&self) -> Option<i16> {
+        match self {
+            Value::Int16(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    pub fn as_int32(&self) -> Option<i32> {
+        match self {
+            Value::Int32(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    pub fn as_int64(&self) -> Option<i64> {
+        match self {
+            Value::Int64(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            Value::Float(f) => Some(*f),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Value::String(s) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn as_timestamp(&self) -> Option<u64> {
+        match self {
+            Value::Timestamp(t) => Some(*t),
+            _ => None,
+        }
+    }
+
+    pub fn as_u8(&self) -> Option<u8> {
+        match self {
+            Value::UInt8(u) => Some(*u),
+            _ => None,
+        }
+    }
+
+    pub fn as_u16(&self) -> Option<u16> {
+        match self {
+            Value::UInt16(u) => Some(*u),
+            _ => None,
+        }
+    }
+
+    pub fn as_u32(&self) -> Option<u32> {
+        match self {
+            Value::UInt32(u) => Some(*u),
+            _ => None,
         }
     }
 
     pub fn as_u64(&self) -> Option<u64> {
         match self {
             Value::UInt64(u) => Some(*u),
+            _ => None,
+        }
+    }
+
+    pub fn as_uuid(&self) -> Option<Uuid> {
+        match self {
+            Value::UUID(u) => Some(*u),
             _ => None,
         }
     }

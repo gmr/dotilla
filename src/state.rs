@@ -6,7 +6,6 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tree_sitter::Parser;
 
-use crate::http::server;
 use crate::storage::{database, errors, namespace};
 use crate::{config, cypher};
 
@@ -30,12 +29,8 @@ pub struct AppState {
 
 impl AppState {
     pub async fn initialize(config_path: PathBuf) -> Result<Arc<Self>, StartupError> {
-        let config = config::load(config_path).map_err(|e| StartupError::Config { err: e })?;
-        let db = Arc::new(
-            database::Database::initialize(&config)
-                .await
-                .map_err(|e| StartupError::Database { err: e })?,
-        );
+        let config = config::load(config_path)?;
+        let db = Arc::new(database::Database::initialize(&config).await?);
         let namespaces = namespace::load_all(&db).await?;
         Ok(Arc::new(Self {
             cancellation_token: CancellationToken::new(),
@@ -80,50 +75,25 @@ impl AppState {
 #[derive(Debug, Error)]
 pub enum StartupError {
     /// Error reading or validating the configuration file
-    #[error("Configuration error: {err}")]
-    Config {
-        #[from]
-        err: config::Error,
-    },
-
-    /// Error spawning multiple tasks
-    #[error("Error spawning multiple tasks: {err}")]
-    Task {
-        #[from]
-        err: tokio::task::JoinError,
-    },
-
-    /// Error starting the HTTP server
-    #[error("HTTP Server error: {err}")]
-    Http {
-        #[from]
-        err: server::Error,
-    },
+    #[error("Configuration error: {0}")]
+    Config(#[from] config::Error),
 
     /// Error opening the database
-    #[error("Graph database initialization error: {err}")]
-    Database {
-        #[from]
-        err: database::Error,
-    },
+    #[error("Graph database initialization error: {0}")]
+    Database(#[from] database::Error),
 
     /// Error loading namespaces
-    #[error("Error loading namespaces: {err}")]
-    Namespaces {
-        #[from]
-        err: errors::Error,
-    },
+    #[error("Error loading namespaces: {0}")]
+    Namespaces(#[from] errors::Error),
 }
 
 impl StartupError {
     /// Returns the exit code for the error.
     pub fn exit_code(&self) -> i32 {
         match self {
-            StartupError::Config { err } => err.exit_code(),
-            StartupError::Http { err } => err.exit_code(),
-            StartupError::Task { .. } => 1,
-            StartupError::Database { err } => err.exit_code(),
-            StartupError::Namespaces { .. } => 5,
+            StartupError::Config(err) => err.exit_code(),
+            StartupError::Database(err) => err.exit_code(),
+            StartupError::Namespaces(..) => 6,
         }
     }
 }

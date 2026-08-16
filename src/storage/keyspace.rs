@@ -156,7 +156,16 @@ pub struct Keyspaces {
     pub vectors: Keyspace,
 }
 
+pub struct KeyspacesDetails {
+    pub system: Details,
+    pub nodes: Details,
+    pub edges: Details,
+    pub labels: Details,
+    pub vectors: Details,
+}
+
 impl Keyspaces {
+    /// Opens a new keyspaces instance with the given name.
     pub async fn open(db: &database::Database, name: &str) -> Result<Self, errors::Error> {
         let names = Names::new(name);
         let (system, nodes, edges, labels, vectors) = tokio::try_join!(
@@ -175,6 +184,7 @@ impl Keyspaces {
         })
     }
 
+    /// Deletes all keyspaces.
     pub async fn delete(&self, db: &database::Database) -> Result<(), errors::Error> {
         let _ = tokio::try_join!(
             self.system.delete(db),
@@ -184,5 +194,28 @@ impl Keyspaces {
             self.vectors.delete(db)
         )?;
         Ok(())
+    }
+
+    /// Returns the details of all keyspaces.
+    pub async fn details(&self) -> Result<KeyspacesDetails, errors::Error> {
+        let system_future = self.system.details();
+        let nodes_future = self.nodes.details();
+        let edges_future = self.edges.details();
+        let labels_future = self.labels.details();
+        let vectors_future = self.vectors.details();
+        let (system, nodes, edges, labels, vectors) = tokio::try_join!(
+            system_future,
+            nodes_future,
+            edges_future,
+            labels_future,
+            vectors_future
+        )?;
+        Ok(KeyspacesDetails {
+            system,
+            nodes,
+            edges,
+            labels,
+            vectors,
+        })
     }
 }

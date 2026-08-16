@@ -73,11 +73,7 @@ pub struct Namespace {
     pub case_insensitive: bool,
     pub collation_strength: CollationStrength,
     pub database: Arc<database::Database>,
-    pub system: keyspace::Keyspace,
-    pub nodes: keyspace::Keyspace,
-    pub edges: keyspace::Keyspace,
-    pub labels: keyspace::Keyspace,
-    pub vectors: keyspace::Keyspace,
+    pub keyspaces: keyspace::Keyspaces,
     pub last_ids: UniqueIds,
 }
 
@@ -112,11 +108,7 @@ impl Namespace {
                     case_insensitive: config.case_insensitive,
                     collation_strength: config.collation_strength,
                     database: Arc::clone(database),
-                    system: keyspaces.system,
-                    nodes: keyspaces.nodes,
-                    edges: keyspaces.edges,
-                    labels: keyspaces.labels,
-                    vectors: keyspaces.vectors,
+                    keyspaces,
                     last_ids,
                 })
             }
@@ -127,50 +119,35 @@ impl Namespace {
     /// Deletes the namespace and its child keyspaces.
     pub async fn delete(&self) -> Result<(), errors::Error> {
         let _guard = self.database.namespace_lock.lock().await;
-        let keyspaces = keyspace::Keyspaces::open(&self.database, &self.name).await?;
-        keyspaces.delete(&self.database).await?;
+        self.keyspaces.delete(&self.database).await?;
         let name = self.name.as_ref();
         self.database.system.remove_item(name).await?;
         Ok(())
     }
 
+    /// Returns the details of the namespace including disk usage, wasted space, and keyspace details.
     pub async fn details(&self) -> Result<Details, errors::Error> {
-        let keyspaces = keyspace::Keyspaces::open(&self.database, &self.name).await?;
-
-        let system_future = keyspaces.system.details();
-        let nodes_future = keyspaces.nodes.details();
-        let edges_future = keyspaces.edges.details();
-        let labels_future = keyspaces.labels.details();
-        let vectors_future = keyspaces.vectors.details();
-
-        let (system, nodes, edges, labels, vectors) = tokio::try_join!(
-            system_future,
-            nodes_future,
-            edges_future,
-            labels_future,
-            vectors_future
-        )?;
-
+        let details = self.keyspaces.details().await?;
         Ok(Details {
             name: self.name.clone(),
             locale: self.locale.clone(),
             case_insensitive: self.case_insensitive,
             collation_strength: self.collation_strength.clone(),
-            size_on_disk: system.size_on_disk
-                + nodes.size_on_disk
-                + edges.size_on_disk
-                + labels.size_on_disk
-                + vectors.size_on_disk,
-            wasted_space: system.wasted_space
-                + nodes.wasted_space
-                + edges.wasted_space
-                + labels.wasted_space
-                + vectors.wasted_space,
-            system,
-            nodes,
-            edges,
-            labels,
-            vectors,
+            size_on_disk: details.system.size_on_disk
+                + details.nodes.size_on_disk
+                + details.edges.size_on_disk
+                + details.labels.size_on_disk
+                + details.vectors.size_on_disk,
+            wasted_space: details.system.wasted_space
+                + details.nodes.wasted_space
+                + details.edges.wasted_space
+                + details.labels.wasted_space
+                + details.vectors.wasted_space,
+            system: details.system,
+            nodes: details.nodes,
+            edges: details.edges,
+            labels: details.labels,
+            vectors: details.vectors,
         })
     }
 
@@ -189,11 +166,7 @@ impl Namespace {
             case_insensitive: config.case_insensitive,
             collation_strength: config.collation_strength,
             database: Arc::clone(database),
-            system: keyspaces.system,
-            nodes: keyspaces.nodes,
-            edges: keyspaces.edges,
-            labels: keyspaces.labels,
-            vectors: keyspaces.vectors,
+            keyspaces,
             last_ids,
         })
     }
@@ -234,7 +207,8 @@ impl Namespace {
             }
         };
         let value = id + 1;
-        self.system
+        self.keyspaces
+            .system
             .put_item(&key, &value.to_be_bytes().to_vec())
             .await?;
         Ok(value)

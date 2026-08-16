@@ -44,15 +44,12 @@ impl Keyspace {
     pub async fn open(db: &database::Database, name: &str) -> Result<Self, errors::Error> {
         let db = db.handle.clone();
         let ns = name.to_string();
-        match spawn_blocking(move || db.keyspace(&ns, fjall::KeyspaceCreateOptions::default)).await
-        {
-            Ok(Ok(keyspace)) => Ok(Self {
-                name: name.to_string(),
-                handle: keyspace,
-            }),
-            Ok(Err(err)) => Err(errors::Error::Database(err)),
-            Err(err) => Err(errors::Error::IO(err)),
-        }
+        let ks = spawn_blocking(move || db.keyspace(&ns, fjall::KeyspaceCreateOptions::default))
+            .await??;
+        Ok(Self {
+            name: name.to_string(),
+            handle: ks,
+        })
     }
 
     /// Deletes the keyspace from the database.
@@ -96,10 +93,7 @@ impl Keyspace {
     /// Returns the approximate number of items in the keyspace.
     pub async fn item_count(&self) -> Result<usize, errors::Error> {
         let handle = self.handle.clone();
-        match spawn_blocking(move || handle.approximate_len()).await {
-            Ok(value) => Ok(value),
-            Err(err) => Err(errors::Error::IO(err)),
-        }
+        Ok(spawn_blocking(move || handle.approximate_len()).await?)
     }
 
     /// Inserts an item into the keyspace.
@@ -110,40 +104,28 @@ impl Keyspace {
         let handle = self.handle.clone();
         let key = key.as_ref().to_vec();
         let encoded = avro::encode::<T>(value)?;
-        match spawn_blocking(move || handle.insert(key, encoded)).await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(err)) => Err(errors::Error::Database(err)),
-            Err(err) => Err(errors::Error::IO(err)),
-        }
+        spawn_blocking(move || handle.insert(key, encoded)).await??;
+        Ok(())
     }
 
     /// Removes an item from the keyspace.
     pub async fn remove_item(&self, key: impl AsRef<[u8]>) -> Result<(), errors::Error> {
         let handle = self.handle.clone();
         let key = key.as_ref().to_vec();
-        match spawn_blocking(move || handle.remove(key)).await {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(err)) => Err(errors::Error::Database(err)),
-            Err(err) => Err(errors::Error::IO(err)),
-        }
+        spawn_blocking(move || handle.remove(key)).await??;
+        Ok(())
     }
 
     /// Returns the approximate size of the keyspace on disk.
     pub async fn size_on_disk(&self) -> Result<u64, errors::Error> {
         let handle = self.handle.clone();
-        match spawn_blocking(move || handle.disk_space()).await {
-            Ok(value) => Ok(value),
-            Err(err) => Err(errors::Error::IO(err)),
-        }
+        Ok(spawn_blocking(move || handle.disk_space()).await?)
     }
 
     /// Returns the approximate amount of wasted space in the keyspace.
     pub async fn wasted_space(&self) -> Result<u64, errors::Error> {
         let handle = self.handle.clone();
-        match spawn_blocking(move || handle.fragmented_blob_bytes()).await {
-            Ok(value) => Ok(value),
-            Err(err) => Err(errors::Error::IO(err)),
-        }
+        Ok(spawn_blocking(move || handle.fragmented_blob_bytes()).await?)
     }
 }
 

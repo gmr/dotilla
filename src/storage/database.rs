@@ -13,16 +13,10 @@ pub struct Database {
 }
 
 impl Database {
-    /// Initializes the database and returns a mutex-wrapped database handle.
+    /// Initializes the database
     pub async fn initialize(config: &crate::config::Config) -> Result<Self, Error> {
-        let db = match fjall::Database::builder(config.data_directory.clone()).open() {
-            Ok(db) => db,
-            Err(err) => return Err(Error::Internal(err)),
-        };
-        let system = match db.keyspace("system", fjall::KeyspaceCreateOptions::default) {
-            Ok(system) => system,
-            Err(err) => return Err(Error::Internal(err)),
-        };
+        let db = fjall::Database::builder(config.data_directory.clone()).open()?;
+        let system = db.keyspace("system", fjall::KeyspaceCreateOptions::default)?;
         Ok(Self {
             handle: db,
             namespace_lock: tokio::sync::Mutex::new(()),
@@ -37,19 +31,13 @@ impl Database {
     /// Returns the number of journal files in the database.
     pub async fn journal_count(&self) -> Result<usize, errors::Error> {
         let handle = self.handle.clone();
-        match spawn_blocking(move || handle.journal_count()).await {
-            Ok(value) => Ok(value),
-            Err(err) => Err(errors::Error::IO(err)),
-        }
+        Ok(spawn_blocking(move || handle.journal_count()).await?)
     }
 
     /// Returns the number of keyspaces in the database.
     pub async fn keyspace_count(&self) -> Result<usize, errors::Error> {
         let handle = self.handle.clone();
-        match spawn_blocking(move || handle.keyspace_count()).await {
-            Ok(value) => Ok(value),
-            Err(err) => Err(errors::Error::IO(err)),
-        }
+        Ok(spawn_blocking(move || handle.keyspace_count()).await?)
     }
 
     /// Returns the approximate size of the database on disk.
@@ -61,10 +49,7 @@ impl Database {
     /// Returns the approximate size of the write buffer.
     pub async fn write_buffer_size(&self) -> Result<u64, errors::Error> {
         let handle = self.handle.clone();
-        match spawn_blocking(move || handle.write_buffer_size()).await {
-            Ok(value) => Ok(value),
-            Err(err) => Err(errors::Error::IO(err)),
-        }
+        Ok(spawn_blocking(move || handle.write_buffer_size()).await?)
     }
 }
 

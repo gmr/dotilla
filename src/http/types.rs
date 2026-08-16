@@ -34,13 +34,14 @@ where
         match Path::<T>::from_request_parts(parts, state).await {
             Ok(Path(value)) => Ok(ValidatedPath(value)),
             Err(rejection) => {
-                let path = parts.uri.path()[2..].to_string();
+                let path = parts.uri.path();
+                let path = path.strip_prefix('/').unwrap_or(path);
                 let body = ErrorResponse {
                     type_: "about:blank".to_string(),
                     title: "Bad Request".to_string(),
                     status: StatusCode::BAD_REQUEST.as_u16(),
                     detail: rejection.to_string(),
-                    instance: path,
+                    instance: path.to_string(),
                     hint: None,
                 };
                 Err((StatusCode::BAD_REQUEST, Json(body)).into_response())

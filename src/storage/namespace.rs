@@ -105,7 +105,7 @@ impl Namespace {
                 };
                 config.save(database, name).await?;
                 let keyspaces = keyspace::Keyspaces::open(database, name).await?;
-                let last_ids = load_last_ids(&keyspaces.system).await?;
+                let last_ids = create_last_ids(&keyspaces.system).await?;
                 Ok(Self {
                     name: namespace_name,
                     locale: config.locale,
@@ -232,9 +232,11 @@ impl Namespace {
                 return Err(errors::Error::ValueError);
             }
         };
-        let value = types::Value::UInt64(id + 1);
-        self.system.put_item(&key, &value).await?;
-        Ok(value.as_u64().unwrap())
+        let value = id + 1;
+        self.system
+            .put_item(&key, &value.to_be_bytes().to_vec())
+            .await?;
+        Ok(value)
     }
 }
 
@@ -252,12 +254,25 @@ pub async fn load_all(
 }
 
 async fn load_id(system: &keyspace::Keyspace, key: &str) -> Result<u64, errors::Error> {
-    let value = match system.get_item::<types::Value>(key).await {
-        Ok(value) => value,
-        Err(errors::Error::NotFound) => types::Value::UInt64(0),
-        Err(error) => return Err(error),
-    };
-    Ok(value.as_u64().unwrap())
+    let bytes: Vec<u8> = system.get_item(key).await?;
+    match bytes[0..8].try_into() {
+        Ok(bytes) => Ok(u64::from_be_bytes(bytes)),
+        Err(_) => Err(errors::Error::NotFound),
+    }
+}
+
+async fn create_last_ids(system: &keyspace::Keyspace) -> Result<UniqueIds, errors::Error> {
+    let keys = ["nodes_id", "edges_id", "labels_id", "vectors_id"];
+    let value: u64 = 0;
+    for key in keys {
+        system.put_item(key, &value.to_be_bytes().to_vec()).await?;
+    }
+    Ok(UniqueIds {
+        nodes: AtomicU64::new(value),
+        edges: AtomicU64::new(value),
+        labels: AtomicU64::new(value),
+        vectors: AtomicU64::new(value),
+    })
 }
 
 async fn load_last_ids(system: &keyspace::Keyspace) -> Result<UniqueIds, errors::Error> {

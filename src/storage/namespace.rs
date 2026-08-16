@@ -31,7 +31,10 @@ pub struct Config {
 impl Config {
     /// Load a config from the database
     pub async fn load(database: &database::Database, name: &str) -> Result<Self, errors::Error> {
-        database.system.get_item(name).await
+        database
+            .system
+            .get_item(format!("ns:{name}").as_str())
+            .await
     }
 
     /// Save the config to the database
@@ -40,7 +43,10 @@ impl Config {
         database: &database::Database,
         name: &str,
     ) -> Result<(), errors::Error> {
-        database.system.put_item(name, self).await
+        database
+            .system
+            .put_item(format!("ns:{name}").as_str(), self)
+            .await
     }
 }
 
@@ -121,7 +127,10 @@ impl Namespace {
         let _guard = self.database.namespace_lock.lock().await;
         self.keyspaces.delete(&self.database).await?;
         let name = self.name.as_ref();
-        self.database.system.remove_item(name).await?;
+        self.database
+            .system
+            .remove_item(format!("ns:{name}"))
+            .await?;
         Ok(())
     }
 
@@ -179,28 +188,28 @@ impl Namespace {
                     .last_ids
                     .nodes
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                ("nodes_id".to_string(), value)
+                ("id:nodes".to_string(), value)
             }
             "edges" => {
                 let value = self
                     .last_ids
                     .edges
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                ("edges_id".to_string(), value)
+                ("id:edges".to_string(), value)
             }
             "labels" => {
                 let value = self
                     .last_ids
                     .labels
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                ("labels_id".to_string(), value)
+                ("id:labels".to_string(), value)
             }
             "vectors" => {
                 let value = self
                     .last_ids
                     .vectors
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                ("vectors_id".to_string(), value)
+                ("id:vectors".to_string(), value)
             }
             _ => {
                 return Err(errors::Error::ValueError);
@@ -215,29 +224,9 @@ impl Namespace {
     }
 }
 
-pub async fn load_all(
-    db: &Arc<database::Database>,
-) -> Result<HashMap<Name, Arc<Namespace>>, errors::Error> {
-    let mut namespaces = HashMap::new();
-    for item in db.system.handle.iter() {
-        let name = item.key().unwrap().to_vec();
-        let name = String::from_utf8(name).unwrap();
-        let ns = Namespace::get(&db.clone(), &name).await?;
-        namespaces.insert(ns.name.clone(), Arc::new(ns));
-    }
-    Ok(namespaces)
-}
-
-async fn load_id(system: &keyspace::Keyspace, key: &str) -> Result<u64, errors::Error> {
-    let bytes: Vec<u8> = system.get_item(key).await?;
-    match bytes[0..8].try_into() {
-        Ok(bytes) => Ok(u64::from_be_bytes(bytes)),
-        Err(_) => Err(errors::Error::NotFound),
-    }
-}
-
+/// Creates a new set of last IDs in the system keyspace
 async fn create_last_ids(system: &keyspace::Keyspace) -> Result<UniqueIds, errors::Error> {
-    let keys = ["nodes_id", "edges_id", "labels_id", "vectors_id"];
+    let keys = ["id:nodes", "id:edges", "id:labels", "id:vectors"];
     let value: u64 = 0;
     for key in keys {
         system.put_item(key, &value.to_be_bytes().to_vec()).await?;
@@ -250,12 +239,39 @@ async fn create_last_ids(system: &keyspace::Keyspace) -> Result<UniqueIds, error
     })
 }
 
+/// Loads all namespaces from the database off disk
+pub async fn load_all(
+    db: &Arc<database::Database>,
+) -> Result<HashMap<Name, Arc<Namespace>>, errors::Error> {
+    let _guard = db.namespace_lock.lock().await;
+    let mut namespaces = HashMap::new();
+    let items: Vec<fjall::Guard> = db.system.handle.prefix("ns:").collect();
+    for item in items {
+        let name = item.key()?.to_vec();
+        let name = String::from_utf8(name)?;
+        let name = name.strip_prefix("ns:").ok_or(errors::Error::ValueError)?;
+        let ns = Namespace::get(db, name).await?;
+        namespaces.insert(ns.name.clone(), Arc::new(ns));
+    }
+    Ok(namespaces)
+}
+
+/// Loads a unique ID from the system keyspace
+async fn load_last_id(system: &keyspace::Keyspace, key: &str) -> Result<u64, errors::Error> {
+    let bytes: Vec<u8> = system.get_item(key).await?;
+    match bytes[0..8].try_into() {
+        Ok(bytes) => Ok(u64::from_be_bytes(bytes)),
+        Err(_) => Err(errors::Error::NotFound),
+    }
+}
+
+/// Loads the last unique IDs from the system keyspace
 async fn load_last_ids(system: &keyspace::Keyspace) -> Result<UniqueIds, errors::Error> {
     Ok(UniqueIds {
-        nodes: AtomicU64::new(load_id(system, "nodes_id").await?),
-        edges: AtomicU64::new(load_id(system, "edges_id").await?),
-        labels: AtomicU64::new(load_id(system, "labels_id").await?),
-        vectors: AtomicU64::new(load_id(system, "vectors_id").await?),
+        nodes: AtomicU64::new(load_last_id(system, "id:nodes").await?),
+        edges: AtomicU64::new(load_last_id(system, "id:edges").await?),
+        labels: AtomicU64::new(load_last_id(system, "id:labels").await?),
+        vectors: AtomicU64::new(load_last_id(system, "id:vectors").await?),
     })
 }
 

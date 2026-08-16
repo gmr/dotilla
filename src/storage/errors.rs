@@ -22,6 +22,9 @@ pub enum Error {
     #[error("not found")]
     NotFound,
 
+    #[error("UTF-8 decoding error")]
+    UTF8(#[from] std::string::FromUtf8Error),
+
     #[error("value error")]
     ValueError,
 }

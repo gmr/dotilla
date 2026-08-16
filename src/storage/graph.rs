@@ -124,7 +124,7 @@ mod tests {
         let namespace = namespace::Namespace::create(&ctx.state.database, "test", None, None, None)
             .await
             .unwrap();
-        assert!(namespace.name.to_string() == "test".to_string());
+        assert!(namespace.name == "test");
 
         let labels = vec![types::Label("Foo".to_string())];
         let mut properties = types::Table::default();
@@ -136,20 +136,14 @@ mod tests {
 
         assert!(node.labels.len() == 1);
         assert!(node.labels[0].0 == "Foo");
-        assert!(
-            node.properties.get(&"foo".to_string())
-                == Some(&types::Value::String("bar".to_string()))
-        );
+        assert!(node.properties.get("foo") == Some(&types::Value::String("bar".to_string())));
 
         let fetched: Node = Node::get(&namespace, node.id).await.unwrap();
 
         assert!(fetched.id == node.id);
         assert!(fetched.labels.len() == 1);
         assert!(fetched.labels[0].0 == "Foo");
-        assert!(
-            fetched.properties.get(&"foo".to_string())
-                == Some(&types::Value::String("bar".to_string()))
-        );
+        assert!(fetched.properties.get("foo") == Some(&types::Value::String("bar".to_string())));
 
         Node::delete(&namespace, node.id).await.unwrap();
         let result = Node::get(&namespace, node.id).await;

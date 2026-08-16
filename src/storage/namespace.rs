@@ -188,28 +188,28 @@ impl Namespace {
                     .last_ids
                     .nodes
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                ("id:nodes".to_string(), value)
+                ("id:nodes", value)
             }
             "edges" => {
                 let value = self
                     .last_ids
                     .edges
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                ("id:edges".to_string(), value)
+                ("id:edges", value)
             }
             "labels" => {
                 let value = self
                     .last_ids
                     .labels
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                ("id:labels".to_string(), value)
+                ("id:labels", value)
             }
             "vectors" => {
                 let value = self
                     .last_ids
                     .vectors
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                ("id:vectors".to_string(), value)
+                ("id:vectors", value)
             }
             _ => {
                 return Err(errors::Error::ValueError);

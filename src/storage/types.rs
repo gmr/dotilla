@@ -274,7 +274,7 @@ impl Table {
         self.0.insert(name, value);
     }
 
-    pub fn get(&self, name: &String) -> Option<&Value> {
+    pub fn get(&self, name: &str) -> Option<&Value> {
         self.0.get(name)
     }
 

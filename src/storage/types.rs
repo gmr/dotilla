@@ -58,7 +58,7 @@ macro_rules! validated_string {
             }
 
             pub fn is_empty(&self) -> bool {
-                false
+                self.0.is_empty()
             }
         }
 

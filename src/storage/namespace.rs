@@ -292,11 +292,11 @@ mod tests {
             .await
             .unwrap();
         let id = ns.get_next_id("nodes").await.unwrap();
-        assert!(id == 1);
+        assert_eq!(id, 1);
         let id = ns.get_next_id("nodes").await.unwrap();
-        assert!(id == 2);
+        assert_eq!(id, 2);
         let id = ns.get_next_id("nodes").await.unwrap();
-        assert!(id == 3);
+        assert_eq!(id, 3);
     }
 
     #[test_context(TestContext)]
@@ -310,7 +310,7 @@ mod tests {
             futures.push(ns.get_next_id("nodes"));
         }
         let results = try_join_all(futures).await.unwrap();
-        assert!(results.len() == 100);
+        assert_eq!(results.len(), 100);
         let unique: HashSet<_> = results.iter().copied().collect();
         assert_eq!(unique.len(), results.len());
     }

@@ -79,13 +79,13 @@ fn default_sync_mode() -> SyncMode {
 
 #[derive(Clone, Debug, Default, Deserialize, Display, EnumString, PartialEq, Serialize)]
 pub enum SyncMode {
-    #[default]
     #[serde(rename = "buffer")]
     #[strum(serialize = "buffer")]
     Buffer,
     #[serde(rename = "data")]
     #[strum(serialize = "data")]
     Data,
+    #[default]
     #[serde(rename = "all")]
     #[strum(serialize = "all")]
     All,

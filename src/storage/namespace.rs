@@ -91,7 +91,7 @@ impl Namespace {
         collation_strength: Option<CollationStrength>,
     ) -> Result<Self, errors::Error> {
         let namespace_name = Name::try_from(name.to_string())?;
-
+        let _guard = database.namespace_lock.lock().await;
         match Config::load(database, name).await {
             Ok(_) => Err(errors::Error::NamespaceExists {
                 namespace: name.to_string(),
@@ -103,9 +103,9 @@ impl Namespace {
                     case_insensitive: case_insensitive.unwrap_or(false),
                     collation_strength: collation_strength.unwrap_or(CollationStrength::Primary),
                 };
-                config.save(database, name).await?;
                 let keyspaces = keyspace::Keyspaces::open(database, name).await?;
                 let last_ids = create_last_ids(&keyspaces.system).await?;
+                config.save(database, name).await?;
                 Ok(Self {
                     name: namespace_name,
                     locale: config.locale,
@@ -126,6 +126,7 @@ impl Namespace {
 
     /// Deletes the namespace and its child keyspaces.
     pub async fn delete(&self) -> Result<(), errors::Error> {
+        let _guard = self.database.namespace_lock.lock().await;
         let keyspaces = keyspace::Keyspaces::open(&self.database, &self.name).await?;
         keyspaces.delete(&self.database).await?;
         let name = self.name.as_ref();
@@ -242,13 +243,13 @@ impl Namespace {
 
 pub async fn load_all(
     db: &Arc<database::Database>,
-) -> Result<HashMap<Name, Namespace>, errors::Error> {
+) -> Result<HashMap<Name, Arc<Namespace>>, errors::Error> {
     let mut namespaces = HashMap::new();
     for item in db.system.handle.iter() {
         let name = item.key().unwrap().to_vec();
         let name = String::from_utf8(name).unwrap();
         let ns = Namespace::get(&db.clone(), &name).await?;
-        namespaces.insert(ns.name.clone(), ns);
+        namespaces.insert(ns.name.clone(), Arc::new(ns));
     }
     Ok(namespaces)
 }

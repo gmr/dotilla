@@ -11,13 +11,13 @@ pub async fn delete(
     State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    let ns = match namespace::Namespace::get(&state.database, params.namespace.as_ref()).await {
+    let ns = match get_namespace(&state, params.namespace.as_ref()).await {
         Ok(ns) => ns,
         Err(err) => return error_response(err, params.namespace.as_ref()),
     };
     match ns.delete().await {
         Ok(_) => {
-            state.remove_namespace(ns);
+            state.remove_namespace(params.namespace.as_ref());
             (StatusCode::NO_CONTENT, "".into_response())
         }
         Err(err) => error_response(err, params.namespace.as_ref()),
@@ -29,11 +29,12 @@ pub async fn get(
     State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    match namespace::Namespace::get(&state.database, params.namespace.as_ref()).await {
-        Ok(ns) => match ns.details().await {
-            Ok(details) => (StatusCode::OK, Json(details).into_response()),
-            Err(err) => error_response(err, params.namespace.as_ref()),
-        },
+    let ns = match get_namespace(&state, params.namespace.as_ref()).await {
+        Ok(ns) => ns,
+        Err(err) => return error_response(err, params.namespace.as_ref()),
+    };
+    match ns.details().await {
+        Ok(details) => (StatusCode::OK, Json(details).into_response()),
         Err(err) => error_response(err, params.namespace.as_ref()),
     }
 }
@@ -43,7 +44,7 @@ pub async fn head(
     State(state): State<Arc<state::AppState>>,
     super::types::ValidatedPath(params): super::types::ValidatedPath<QueryParams>,
 ) -> impl IntoResponse {
-    match namespace::Namespace::get(&state.database, params.namespace.as_ref()).await {
+    match get_namespace(&state, params.namespace.as_ref()).await {
         Ok(_) => (StatusCode::OK, "".into_response()),
         Err(err) => error_response(err, params.namespace.as_ref()),
     }
@@ -85,13 +86,27 @@ pub async fn put(
     .await
     {
         Ok(ns) => {
-            state.add_namespace(ns);
+            state.maybe_add_namespace(Arc::new(ns));
             (
                 StatusCode::CREATED,
                 Json(CreateOkResponse { ok: true }).into_response(),
             )
         }
         Err(err) => error_response(err, params.namespace.as_ref()),
+    }
+}
+
+/// Universal Namespace get from cache first, then load from disk if not found.
+async fn get_namespace(
+    state: &state::AppState,
+    namespace: &str,
+) -> Result<Arc<namespace::Namespace>, errors::Error> {
+    match state.get_namespace(namespace) {
+        Some(ns) => Ok(ns),
+        None => {
+            let ns = namespace::Namespace::get(&state.database, namespace).await?;
+            Ok(state.maybe_add_namespace(Arc::new(ns)))
+        }
     }
 }
 

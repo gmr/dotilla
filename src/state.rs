@@ -25,7 +25,7 @@ pub struct AppState {
     pub database: Arc<database::Database>,
 
     /// The handle to the namespace cache
-    pub namespaces: Mutex<HashMap<namespace::Name, namespace::Namespace>>,
+    pub namespaces: Mutex<HashMap<namespace::Name, Arc<namespace::Namespace>>>,
 }
 
 impl AppState {
@@ -46,8 +46,8 @@ impl AppState {
         }))
     }
 
-    pub fn add_namespace(&self, ns: namespace::Namespace) {
-        self.namespaces.lock().unwrap().insert(ns.name.clone(), ns);
+    pub fn get_namespace(&self, name: &str) -> Option<Arc<namespace::Namespace>> {
+        self.namespaces.lock().unwrap().get(name).cloned()
     }
 
     pub fn list_namespaces(&self) -> Vec<String> {
@@ -59,8 +59,20 @@ impl AppState {
             .collect()
     }
 
-    pub fn remove_namespace(&self, ns: namespace::Namespace) {
-        self.namespaces.lock().unwrap().remove(&ns.name);
+    pub fn maybe_add_namespace(&self, ns: Arc<namespace::Namespace>) -> Arc<namespace::Namespace> {
+        // Minor race condition
+        let mut guard = self.namespaces.lock().unwrap();
+        match guard.get(&ns.name) {
+            Some(ns) => ns.clone(),
+            None => {
+                guard.insert(ns.name.clone(), ns.clone());
+                ns
+            }
+        }
+    }
+
+    pub fn remove_namespace(&self, name: &str) {
+        self.namespaces.lock().unwrap().remove(name);
     }
 }
 

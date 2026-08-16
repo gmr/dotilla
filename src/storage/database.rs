@@ -6,6 +6,8 @@ use super::keyspace::Keyspace;
 
 pub struct Database {
     pub handle: fjall::Database,
+    /// taken only at the top of create/delete, never in helpers they call — not reentrant
+    pub namespace_lock: tokio::sync::Mutex<()>,
     pub system: Keyspace,
     pub default_locale: String,
 }
@@ -23,6 +25,7 @@ impl Database {
         };
         Ok(Self {
             handle: db,
+            namespace_lock: tokio::sync::Mutex::new(()),
             system: Keyspace {
                 name: "system".to_string(),
                 handle: system,

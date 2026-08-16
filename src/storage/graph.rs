@@ -33,14 +33,14 @@ pub struct Node {
 impl Node {
     pub async fn create(
         ns: &namespace::Namespace,
-        labels: &[Label],
-        properties: &Table,
+        labels: Vec<Label>,
+        properties: Table,
     ) -> Result<Self, errors::Error> {
         let id = ns.get_next_id("nodes").await?;
         let node = Self {
             id,
-            labels: labels.to_vec(),
-            properties: properties.clone(),
+            labels,
+            properties,
         };
         ns.keyspaces.nodes.put_item(id.to_be_bytes(), &node).await?;
         Ok(node)
@@ -145,9 +145,7 @@ mod tests {
         let mut properties = types::Table::default();
         properties.insert("foo".to_string(), types::Value::String("bar".to_string()));
 
-        let node = Node::create(&namespace, &labels, &properties)
-            .await
-            .unwrap();
+        let node = Node::create(&namespace, labels, properties).await.unwrap();
 
         assert_eq!(node.labels.len(), 1);
         assert_eq!(node.labels[0].0, "Foo");

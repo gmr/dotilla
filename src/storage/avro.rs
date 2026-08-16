@@ -1,28 +1,30 @@
 use apache_avro::{
-    AvroSchema, reader::datum::GenericDatumReader, writer::datum::GenericDatumWriter,
+    AvroSchema, Schema, reader::datum::GenericDatumReader, writer::datum::GenericDatumWriter,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use super::errors;
 
+pub trait CachedSchema {
+    fn cached_schema() -> &'static Schema;
+}
+
 pub fn decode<T>(bytes: &[u8]) -> Result<T, errors::Error>
 where
-    T: AvroSchema + DeserializeOwned,
+    T: AvroSchema + DeserializeOwned + CachedSchema,
 {
     let mut input = bytes;
-    let schema = T::get_schema();
-    let reader = GenericDatumReader::builder(&schema).build()?;
+    let reader = GenericDatumReader::builder(T::cached_schema()).build()?;
     let value: T = reader.read_deser(&mut input)?;
     Ok(value)
 }
 
 pub fn encode<T>(value: &T) -> Result<Vec<u8>, errors::Error>
 where
-    T: AvroSchema + Serialize,
+    T: AvroSchema + Serialize + CachedSchema,
 {
-    let schema = T::get_schema();
-    let writer = GenericDatumWriter::builder(&schema).build()?;
+    let writer = GenericDatumWriter::builder(T::cached_schema()).build()?;
     let bytes = writer.write_ser_to_vec(value)?;
     Ok(bytes)
 }

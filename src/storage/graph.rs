@@ -1,8 +1,9 @@
-use apache_avro::AvroSchema;
+use apache_avro::{AvroSchema, Schema};
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 
 use super::types::{Label, Table};
-use super::{errors, namespace};
+use super::{avro, errors, namespace};
 
 #[derive(AvroSchema, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[avro(namespace = "org.dotilla")]
@@ -12,6 +13,13 @@ pub struct Edge {
     pub target: u64,
     pub labels: Vec<Label>,
     pub properties: Table,
+}
+
+impl avro::CachedSchema for Edge {
+    fn cached_schema() -> &'static Schema {
+        static EDGE_SCHEMA: LazyLock<Schema> = LazyLock::new(Edge::get_schema);
+        &EDGE_SCHEMA
+    }
 }
 
 #[derive(AvroSchema, Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -44,6 +52,13 @@ impl Node {
 
     pub async fn get(ns: &namespace::Namespace, id: u64) -> Result<Self, errors::Error> {
         ns.keyspaces.nodes.get_item(id.to_be_bytes()).await
+    }
+}
+
+impl avro::CachedSchema for Node {
+    fn cached_schema() -> &'static Schema {
+        static NODE_SCHEMA: LazyLock<Schema> = LazyLock::new(Node::get_schema);
+        &NODE_SCHEMA
     }
 }
 

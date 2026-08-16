@@ -1,12 +1,13 @@
-use apache_avro::AvroSchema;
+use apache_avro::{AvroSchema, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::sync::atomic::AtomicU64;
 
 // Re-export the NamespaceName as Name
 pub use super::types::NamespaceName as Name;
-use super::{database, errors, keyspace, types};
+use super::{avro, database, errors, keyspace, types};
 
 #[non_exhaustive]
 #[repr(u8)]
@@ -47,6 +48,13 @@ impl Config {
             .system
             .put_item(format!("ns:{name}").as_str(), self)
             .await
+    }
+}
+
+impl avro::CachedSchema for Config {
+    fn cached_schema() -> &'static Schema {
+        static CONFIG_SCHEMA: LazyLock<Schema> = LazyLock::new(Config::get_schema);
+        &CONFIG_SCHEMA
     }
 }
 
@@ -218,7 +226,7 @@ impl Namespace {
         let value = id + 1;
         self.keyspaces
             .system
-            .put_item(&key, &value.to_be_bytes().to_vec())
+            .put_item_raw(&key, &value.to_be_bytes())
             .await?;
         Ok(value)
     }
@@ -229,7 +237,7 @@ async fn create_last_ids(system: &keyspace::Keyspace) -> Result<UniqueIds, error
     let keys = ["id:nodes", "id:edges", "id:labels", "id:vectors"];
     let value: u64 = 0;
     for key in keys {
-        system.put_item(key, &value.to_be_bytes().to_vec()).await?;
+        system.put_item_raw(key, &value.to_be_bytes()).await?;
     }
     Ok(UniqueIds {
         nodes: AtomicU64::new(value),
@@ -258,7 +266,7 @@ pub async fn load_all(
 
 /// Loads a unique ID from the system keyspace
 async fn load_last_id(system: &keyspace::Keyspace, key: &str) -> Result<u64, errors::Error> {
-    let bytes: Vec<u8> = system.get_item(key).await?;
+    let bytes = system.get_item_raw(key).await?;
     match bytes[0..8].try_into() {
         Ok(bytes) => Ok(u64::from_be_bytes(bytes)),
         Err(_) => Err(errors::Error::NotFound),

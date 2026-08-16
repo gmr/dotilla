@@ -1,10 +1,13 @@
-use apache_avro::{AvroSchema, Uuid, schema, serde::AvroSchemaComponent};
+use apache_avro::{AvroSchema, Schema, Uuid, schema, serde::AvroSchemaComponent};
 use convert_case::{Case, Casing};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display};
 use std::hash::Hash;
+use std::sync::LazyLock;
 use thiserror::Error;
+
+use super::avro;
 
 /// Macro for validating a string against a set of rules.
 macro_rules! validated_string {
@@ -134,6 +137,15 @@ macro_rules! validated_string {
                 Self::new(raw)
             }
         }
+
+        impl $crate::storage::avro::CachedSchema for $name {
+            fn cached_schema() -> &'static apache_avro::Schema {
+                static SCHEMA: std::sync::LazyLock<apache_avro::Schema> =
+                    std::sync::LazyLock::new(<$name as apache_avro::AvroSchema>::get_schema);
+
+                &SCHEMA
+            }
+        }
     };
 }
 
@@ -261,6 +273,13 @@ impl Value {
     }
 }
 
+impl avro::CachedSchema for Value {
+    fn cached_schema() -> &'static Schema {
+        static VALUE_SCHEMA: LazyLock<Schema> = LazyLock::new(Value::get_schema);
+        &VALUE_SCHEMA
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Table(HashMap<String, Value>);
@@ -293,6 +312,13 @@ impl AvroSchemaComponent for Table {
             enclosing_namespace,
         ))
         .build()
+    }
+}
+
+impl avro::CachedSchema for Table {
+    fn cached_schema() -> &'static Schema {
+        static TABLE_SCHEMA: LazyLock<Schema> = LazyLock::new(Table::get_schema);
+        &TABLE_SCHEMA
     }
 }
 

@@ -74,10 +74,10 @@ impl Keyspace {
         })
     }
 
-    /// Returns the number of items in the keyspace.
+    /// Returns the item at the given key, if it exists, decoding it with Avro
     pub async fn get_item<T>(&self, key: impl AsRef<[u8]>) -> Result<T, errors::Error>
     where
-        T: AvroSchema + DeserializeOwned,
+        T: AvroSchema + DeserializeOwned + avro::CachedSchema,
     {
         let handle = self.handle.clone();
         let key = key.as_ref().to_vec();
@@ -90,21 +90,44 @@ impl Keyspace {
         }
     }
 
+    /// Returns the item at the given key, if it exists, without decoding it with Avro.
+    pub async fn get_item_raw(&self, key: impl AsRef<[u8]>) -> Result<fjall::Slice, errors::Error> {
+        let handle = self.handle.clone();
+        let key = key.as_ref().to_vec();
+        match spawn_blocking(move || handle.get(key)).await?? {
+            Some(value) => Ok(value),
+            None => Err(errors::Error::NotFound),
+        }
+    }
+
     /// Returns the approximate number of items in the keyspace.
     pub async fn item_count(&self) -> Result<usize, errors::Error> {
         let handle = self.handle.clone();
         Ok(spawn_blocking(move || handle.approximate_len()).await?)
     }
 
-    /// Inserts an item into the keyspace.
+    /// Inserts an item into the keyspace, auto-encoding it with Avro.
     pub async fn put_item<T>(&self, key: impl AsRef<[u8]>, value: &T) -> Result<(), errors::Error>
     where
-        T: AvroSchema + Serialize,
+        T: AvroSchema + Serialize + avro::CachedSchema,
     {
         let handle = self.handle.clone();
         let key = key.as_ref().to_vec();
         let encoded = avro::encode::<T>(value)?;
         spawn_blocking(move || handle.insert(key, encoded)).await??;
+        Ok(())
+    }
+
+    /// Inserts an item into the keyspace without encoding it with Avro.
+    pub async fn put_item_raw(
+        &self,
+        key: impl AsRef<[u8]>,
+        value: impl AsRef<[u8]>,
+    ) -> Result<(), errors::Error> {
+        let handle = self.handle.clone();
+        let key = key.as_ref().to_vec();
+        let value = value.as_ref().to_vec();
+        spawn_blocking(move || handle.insert(key, value)).await??;
         Ok(())
     }
 

@@ -36,13 +36,25 @@ impl Node {
         labels: Vec<Label>,
         properties: Table,
     ) -> Result<Self, errors::Error> {
-        let id = ns.get_next_id("nodes").await?;
+        let mut batch = ns.database.batch();
+
         let node = Self {
-            id,
+            id: ns.get_next_id("nodes").await?,
             labels,
             properties,
         };
-        ns.keyspaces.nodes.put_item(id.to_be_bytes(), &node).await?;
+
+        batch.put_item(&ns.keyspaces.nodes, node.id.to_be_bytes(), &node)?;
+
+        for label in node.labels.iter() {
+            batch.put_item_raw(
+                &ns.keyspaces.labels,
+                format!("{label}:{0}", node.id),
+                Vec::new(),
+            );
+        }
+        batch.execute().await?;
+
         Ok(node)
     }
 

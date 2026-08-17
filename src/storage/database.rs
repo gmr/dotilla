@@ -1,8 +1,8 @@
 use thiserror::Error;
 use tokio::task::spawn_blocking;
 
-use super::errors;
 use super::keyspace::Keyspace;
+use super::{batch, errors};
 
 pub struct Database {
     pub handle: fjall::Database,
@@ -20,12 +20,14 @@ impl Database {
         Ok(Self {
             handle: db,
             namespace_lock: tokio::sync::Mutex::new(()),
-            system: Keyspace {
-                name: "system".to_string(),
-                handle: system,
-            },
+            system: Keyspace { handle: system },
             default_locale: config.default_locale.clone(),
         })
+    }
+
+    /// Returns a batch for this database
+    pub fn batch(&self) -> batch::Batch {
+        batch::Batch::new(&self.handle)
     }
 
     /// Returns the number of journal files in the database.

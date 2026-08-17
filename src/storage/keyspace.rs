@@ -35,21 +35,18 @@ pub struct Details {
 
 #[derive(Clone)]
 pub struct Keyspace {
-    pub name: String,
     pub handle: fjall::Keyspace,
 }
 
 impl Keyspace {
     /// Opens a keyspace in the database.
     pub async fn open(db: &database::Database, name: &str) -> Result<Self, errors::Error> {
-        let db = db.handle.clone();
-        let ns = name.to_string();
-        let ks = spawn_blocking(move || db.keyspace(&ns, fjall::KeyspaceCreateOptions::default))
-            .await??;
-        Ok(Self {
-            name: name.to_string(),
-            handle: ks,
-        })
+        let temp = db.handle.clone();
+        let name = name.to_string();
+        let ks =
+            spawn_blocking(move || temp.keyspace(&name, fjall::KeyspaceCreateOptions::default))
+                .await??;
+        Ok(Self { handle: ks })
     }
 
     /// Deletes the keyspace from the database.
@@ -104,6 +101,11 @@ impl Keyspace {
     pub async fn item_count(&self) -> Result<usize, errors::Error> {
         let handle = self.handle.clone();
         Ok(spawn_blocking(move || handle.approximate_len()).await?)
+    }
+
+    /// Returns the name of the keyspace.
+    pub fn name(&self) -> &str {
+        self.handle.name()
     }
 
     /// Inserts an item into the keyspace, auto-encoding it with Avro.

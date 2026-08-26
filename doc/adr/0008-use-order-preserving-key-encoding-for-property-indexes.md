@@ -8,19 +8,24 @@ Accepted
 
 ## Context
 
-ADR 10 stores an entity's properties as a single AMQP field table keyed by
-entity identifier. That layout answers one question well: give me this entity's
+ADR 7 stores an entity's properties as a single Avro datum keyed by entity
+identifier. That layout answers one question well: give me this entity's
 properties. It answers nothing else. `MATCH (n:Person) WHERE n.age > 30` under
-that layout alone is a scan of every `Person` with a full table decode per node,
+that layout alone is a scan of every `Person` with a full datum decode per node,
 discarding almost all of it.
 
 In an LSM tree a range predicate is naturally a seek followed by forward
 iteration, but only if the byte order of the keys matches the semantic order of
-the values they encode. AMQP field table encoding has no such property: the tag
-precedes the payload, numeric payloads are not arranged for byte comparison, and
-nothing relates the encoded bytes to the value's position in an ordering.
+the values they encode. Avro binary encoding has no such property, at either
+level. Within a field, `int` and `long` are zigzag varints, so byte comparison
+reflects neither magnitude nor sign; `string` and `bytes` are length-prefixed,
+so they order by length before content; and `double` is little-endian IEEE 754,
+which byte-compares in the wrong direction and mishandles the sign bit. Across
+fields, a datum is a positional record with no framing, so a field's bytes begin
+at an offset determined by every field that precedes it. There is nothing to
+seek to even if the field encoding were ordered.
 
-So a second encoding is required, with goals opposite to ADR 10's. That encoding
+So a second encoding is required, with goals opposite to ADR 7's. That encoding
 optimises for fidelity and compactness and must round-trip. This one optimises
 for byte-lexicographic ordering and does not need to be reversible at all, since
 the authoritative value is always available in the entity row.
@@ -65,7 +70,7 @@ Encode ordered values as:
 Escape `0x00` as `0x00 0xFF` in variable length encodings and terminate with
 `0x00 0x00`, so the entity identifier suffix is unambiguously separable.
 
-Do not index nulls. ADR 10 does not store them, so an index entry exists for
+Do not index nulls. ADR 7 does not store them, so an index entry exists for
 exactly those entities that have the property. `IS NOT NULL` is therefore a
 prefix scan of `{label}\0{property}\0`, and `IS NULL` is a label scan minus
 index membership.
@@ -114,11 +119,11 @@ sort keys only where the cost is amortised over many comparisons, which is
 precisely the index case.
 
 The index is a derived store, fully rebuildable from the `nodes` and `edges`
-keyspaces. This is the same principle as ADR 9 and for the same underlying
-reason: an external algorithm can shift beneath stored bytes. The two differ in
-consistency requirement. A stale vector index returns worse similarity results;
-a stale property index returns wrong query results, so this one cannot be
-deferred to a worker.
+keyspaces. This is the same principle as the vector index and for the same
+underlying reason: an external algorithm can shift beneath stored bytes. The two
+differ in consistency requirement. A stale vector index returns worse similarity
+results; a stale property index returns wrong query results, so this one cannot
+be deferred to a worker.
 
 Reindexing is therefore a first-class operation with an API, not a maintenance
 script. It is needed when the collation fingerprint changes, when creating an
@@ -126,7 +131,7 @@ index on a non-empty database, and for recovery.
 
 Choosing scan fallback over automatic rebuild means a routine `cargo update`
 that bumps ICU4X degrades performance rather than taking databases offline or
-making open time unbounded, which would fight ADR 8's lazy-open registry.
+making open time unbounded, which would fight the lazy-open database registry.
 Results stay correct throughout. The cost is that a silently slow server is
 easier to ignore than a failing one, so the condition must be loud in logs and
 visible in the metadata response.
@@ -146,19 +151,19 @@ identifiers where byte order would have been fine and stable. `binary` exists
 for those, and choosing it is also the right answer for anyone who wants
 guaranteed stability across upgrades.
 
-ICU4X data adds to binary size, on top of LanceDB from ADR 6 and the embedding
-model from ADR 7. Collation data can be scoped to selected locales at build
-time if this becomes a problem.
+ICU4X data adds to binary size, on top of LanceDB and the embedding model from
+ADR 6. Collation data can be scoped to selected locales at build time if this
+becomes a problem.
 
 `CollationKeySink`, the trait `write_sort_key_to` writes through, is marked
 unstable. It is implemented for `Vec<u8>` among others, so ordinary use is fine,
 but this is a dependency on an unstable API and worth pinning deliberately.
 
 The `Collator` is `Send + Sync`, so one instance is constructed at database open
-from the recorded locale and lives in the per-database `Database` value from
-ADR 8, alongside the fjall and LanceDB handles.
+from the recorded locale and lives in the per-database registry entry, alongside
+the fjall and LanceDB handles.
 
-Index maintenance makes every property write a read-modify-write. ADR 10 already
+Index maintenance makes every property write a read-modify-write. ADR 7 already
 requires this for whole-row encoding, so the marginal cost is the index entry
 computation rather than the read.
 

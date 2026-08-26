@@ -54,5 +54,7 @@ query planner, no joins, and no notion of a schema. Every one of those is ours
 to build on top. This is the intended trade: it does the durable ordered bytes
 part well and stays out of the way of the graph model.
 
-Resource management is per `Database` and is not shared between them. This has
-significant consequences for multi-database servers, addressed in ADR 8.
+Resource management is per `Database` and is not shared between them. A server
+holding many databases open therefore multiplies block caches, write buffers,
+and file descriptors rather than drawing them from a common budget, so the
+registry that owns those handles has to bound how many stay open.

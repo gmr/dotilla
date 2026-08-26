@@ -2,7 +2,7 @@ use apache_avro::{AvroSchema, Schema};
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-use super::types::{Label, Table};
+use super::types::{EdgeLabels, NodeLabels, Table};
 use super::{avro, errors, namespace};
 
 #[derive(AvroSchema, Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -11,7 +11,7 @@ pub struct Edge {
     pub id: u64,
     pub source: u64,
     pub target: u64,
-    pub labels: Vec<Label>,
+    pub labels: EdgeLabels,
     pub properties: Table,
 }
 
@@ -26,26 +26,23 @@ impl avro::CachedSchema for Edge {
 #[avro(namespace = "org.dotilla")]
 pub struct Node {
     pub id: u64,
-    pub labels: Vec<Label>,
+    pub labels: NodeLabels,
     pub properties: Table,
 }
 
 impl Node {
     pub async fn create(
         ns: &namespace::Namespace,
-        labels: Vec<Label>,
+        labels: NodeLabels,
         properties: Table,
     ) -> Result<Self, errors::Error> {
         let mut batch = ns.database.batch();
-
         let node = Self {
             id: ns.get_next_id("nodes").await?,
             labels,
             properties,
         };
-
         batch.put_item(&ns.keyspaces.nodes, node.id.to_be_bytes(), &node)?;
-
         for label in node.labels.iter() {
             batch.put_item_raw(
                 &ns.keyspaces.labels,
@@ -54,16 +51,37 @@ impl Node {
             );
         }
         batch.execute().await?;
-
         Ok(node)
     }
 
-    pub async fn delete(ns: &namespace::Namespace, id: u64) -> Result<(), errors::Error> {
-        ns.keyspaces.nodes.remove_item(id.to_be_bytes()).await
+    pub async fn delete(&self, ns: &namespace::Namespace) -> Result<(), errors::Error> {
+        ns.keyspaces.nodes.remove_item(self.id.to_be_bytes()).await
     }
 
     pub async fn get(ns: &namespace::Namespace, id: u64) -> Result<Self, errors::Error> {
         ns.keyspaces.nodes.get_item(id.to_be_bytes()).await
+    }
+
+    pub async fn merge(
+        mut self,
+        ns: &namespace::Namespace,
+        labels: NodeLabels,
+        properties: Table,
+    ) -> Result<Self, errors::Error> {
+        let add = labels.difference(&self.labels);
+        let mut batch = ns.database.batch();
+        for label in add {
+            batch.put_item_raw(
+                &ns.keyspaces.labels,
+                format!("{label}:{0}", self.id),
+                Vec::new(),
+            );
+        }
+        self.labels.extend(labels);
+        self.properties.extend(properties);
+        batch.put_item(&ns.keyspaces.nodes, self.id.to_be_bytes(), &self)?;
+        batch.execute().await?;
+        Ok(self)
     }
 }
 
@@ -73,10 +91,6 @@ impl avro::CachedSchema for Node {
         &NODE_SCHEMA
     }
 }
-
-pub async fn update_node() {}
-
-pub async fn upsert_node() {}
 
 pub async fn list_nodes() {}
 
@@ -153,14 +167,17 @@ mod tests {
             .unwrap();
         assert_eq!(namespace.name, "test");
 
-        let labels = vec![types::Label("Foo".to_string())];
+        let mut labels = types::NodeLabels::new();
+        let foo = types::NodeLabel("Foo".to_string());
+        labels.insert(foo.clone());
+
         let mut properties = types::Table::default();
         properties.insert("foo".to_string(), types::Value::String("bar".to_string()));
 
         let node = Node::create(&namespace, labels, properties).await.unwrap();
 
         assert_eq!(node.labels.len(), 1);
-        assert_eq!(node.labels[0].0, "Foo");
+        assert_eq!(node.labels.iter().nth(0), Some(&foo));
         assert_eq!(
             node.properties.get("foo"),
             Some(&types::Value::String("bar".to_string()))
@@ -170,13 +187,40 @@ mod tests {
 
         assert_eq!(fetched.id, node.id);
         assert_eq!(fetched.labels.len(), 1);
-        assert_eq!(fetched.labels[0].0, "Foo");
+        assert_eq!(fetched.labels.get(&foo), Some(&foo));
         assert_eq!(
             fetched.properties.get("foo"),
             Some(&types::Value::String("bar".to_string()))
         );
 
-        Node::delete(&namespace, node.id).await.unwrap();
+        let mut new_labels = types::NodeLabels::new();
+        let bar = types::NodeLabel("Bar".to_string());
+        new_labels.insert(bar.clone());
+
+        let mut new_properties = types::Table::new();
+        new_properties.insert("foo".to_string(), types::Value::String("baz".to_string()));
+        new_properties.insert(
+            "qux".to_string(),
+            types::Value::String("corgie".to_string()),
+        );
+
+        let updated = fetched
+            .merge(&namespace, new_labels, new_properties)
+            .await
+            .unwrap();
+        assert_eq!(updated.labels.len(), 2);
+        assert_eq!(updated.labels.get(&foo), Some(&foo));
+        assert_eq!(updated.labels.get(&bar), Some(&bar));
+        assert_eq!(
+            updated.properties.get("foo"),
+            Some(&types::Value::String("baz".to_string()))
+        );
+        assert_eq!(
+            updated.properties.get("qux"),
+            Some(&types::Value::String("corgie".to_string()))
+        );
+
+        updated.delete(&namespace).await.unwrap();
         let result = Node::get(&namespace, node.id).await;
         assert!(matches!(result, Err(errors::Error::NotFound)));
     }

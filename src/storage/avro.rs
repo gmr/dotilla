@@ -33,16 +33,21 @@ where
 mod tests {
     use super::*;
     use crate::storage::graph::Node;
-    use crate::storage::types::{Label, Table, Value};
+    use crate::storage::types::{NodeLabel, NodeLabels, Table, Value};
 
     #[test]
     fn test_node_roundtrip() {
         let mut properties = Table::default();
         properties.insert("name".to_string(), Value::String("John".to_string()));
         properties.insert("age".to_string(), Value::UInt8(42));
+
+        let mut labels = NodeLabels::default();
+        labels.insert(NodeLabel::new("One").unwrap());
+        labels.insert(NodeLabel::new("Two").unwrap());
+
         let node = Node {
             id: 0,
-            labels: vec![Label::new("One").unwrap(), Label::new("Two").unwrap()],
+            labels: labels,
             properties: properties,
         };
         let encoded = encode(&node).unwrap();

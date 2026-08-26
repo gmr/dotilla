@@ -1,7 +1,7 @@
 use apache_avro::{AvroSchema, Schema, Uuid, schema, serde::AvroSchemaComponent};
 use convert_case::{Case, Casing};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::sync::LazyLock;
@@ -149,13 +149,127 @@ macro_rules! validated_string {
     };
 }
 
-validated_string!(Label, "Label", 16383, |c, first| {
+validated_string!(EdgeLabel, "EdgeLabel", 16383, |c, first| {
     if first {
-        c.is_ascii_alphabetic() || c == '_'
+        c.is_ascii_uppercase()
+    } else {
+        c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'
+    }
+});
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct EdgeLabels(pub BTreeSet<EdgeLabel>);
+
+impl EdgeLabels {
+    pub fn new() -> Self {
+        Self(BTreeSet::new())
+    }
+
+    pub fn contains(&self, label: &EdgeLabel) -> bool {
+        self.0.contains(label)
+    }
+
+    pub fn difference<'a>(&'a self, other: &'a Self) -> impl Iterator<Item = &'a EdgeLabel> + 'a {
+        self.0.difference(&other.0)
+    }
+
+    pub fn get(&self, label: &EdgeLabel) -> Option<&EdgeLabel> {
+        self.0.get(label)
+    }
+
+    pub fn insert(&mut self, label: EdgeLabel) {
+        self.0.insert(label);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &EdgeLabel> {
+        self.0.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl AvroSchemaComponent for EdgeLabels {
+    fn get_schema_in_ctxt(
+        named_schemas: &mut HashSet<schema::Name>,
+        enclosing_namespace: schema::NamespaceRef,
+    ) -> schema::Schema {
+        schema::Schema::array(EdgeLabel::get_schema_in_ctxt(
+            named_schemas,
+            enclosing_namespace,
+        ))
+        .build()
+    }
+}
+
+validated_string!(NodeLabel, "NodeLabel", 16383, |c, first| {
+    if first {
+        c.is_ascii_uppercase()
     } else {
         c.is_ascii_alphanumeric() || c == '_'
     }
 });
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct NodeLabels(pub BTreeSet<NodeLabel>);
+
+impl NodeLabels {
+    pub fn new() -> Self {
+        Self(BTreeSet::new())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &NodeLabel> {
+        self.0.iter()
+    }
+
+    pub fn contains(&self, label: &NodeLabel) -> bool {
+        self.0.contains(label)
+    }
+
+    pub fn difference<'a>(&'a self, other: &'a Self) -> impl Iterator<Item = &'a NodeLabel> + 'a {
+        self.0.difference(&other.0)
+    }
+
+    pub fn extend(&mut self, labels: Self) {
+        self.0.extend(labels.0);
+    }
+
+    pub fn get(&self, label: &NodeLabel) -> Option<&NodeLabel> {
+        self.0.get(label)
+    }
+
+    pub fn insert(&mut self, label: NodeLabel) {
+        self.0.insert(label);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl AvroSchemaComponent for NodeLabels {
+    fn get_schema_in_ctxt(
+        named_schemas: &mut HashSet<schema::Name>,
+        enclosing_namespace: schema::NamespaceRef,
+    ) -> schema::Schema {
+        schema::Schema::array(NodeLabel::get_schema_in_ctxt(
+            named_schemas,
+            enclosing_namespace,
+        ))
+        .build()
+    }
+}
 
 validated_string!(NamespaceName, "namespace name", 256, |c, _first| {
     c.is_ascii_alphanumeric() || c == '_' || c == '-'
@@ -289,12 +403,16 @@ impl Table {
         Self(HashMap::new())
     }
 
-    pub fn insert(&mut self, name: String, value: Value) {
-        self.0.insert(name, value);
+    pub fn extend(&mut self, other: Table) {
+        self.0.extend(other.0);
     }
 
     pub fn get(&self, name: &str) -> Option<&Value> {
         self.0.get(name)
+    }
+
+    pub fn insert(&mut self, name: String, value: Value) {
+        self.0.insert(name, value);
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&String, &Value)> {

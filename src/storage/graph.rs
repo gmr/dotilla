@@ -68,20 +68,29 @@ impl Node {
         labels: NodeLabels,
         properties: Table,
     ) -> Result<Self, errors::Error> {
-        let add = labels.difference(&self.labels);
+        self.labels.extend(labels);
+        self.properties.extend(properties);
+        self._save(ns, &self).await?;
+        Ok(self)
+    }
+
+    pub async fn save(&self, ns: &namespace::Namespace) -> Result<(), errors::Error> {
+        self._save(ns, self).await?;
+        Ok(())
+    }
+
+    async fn _save(&self, ns: &namespace::Namespace, node: &Node) -> Result<(), errors::Error> {
         let mut batch = ns.database.batch();
-        for label in add {
+        for label in node.labels.iter() {
             batch.put_item_raw(
                 &ns.keyspaces.labels,
-                format!("{label}:{0}", self.id),
+                format!("{label}:{0}", node.id),
                 Vec::new(),
             );
         }
-        self.labels.extend(labels);
-        self.properties.extend(properties);
-        batch.put_item(&ns.keyspaces.nodes, self.id.to_be_bytes(), &self)?;
+        batch.put_item(&ns.keyspaces.nodes, node.id.to_be_bytes(), node)?;
         batch.execute().await?;
-        Ok(self)
+        Ok(())
     }
 }
 

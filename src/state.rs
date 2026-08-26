@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
-use tree_sitter::Parser;
 
 use crate::storage::{database, errors, namespace};
 use crate::{config, cypher};
@@ -18,7 +18,7 @@ pub struct AppState {
     pub config: crate::config::Config,
 
     /// Used to parse Cypher queries
-    pub cypher_parser: Mutex<Parser>,
+    pub cypher_parser: cypher::Parser,
 
     /// The handle to the database system
     pub database: Arc<database::Database>,
@@ -35,7 +35,7 @@ impl AppState {
         Ok(Arc::new(Self {
             cancellation_token: CancellationToken::new(),
             config: config.clone(),
-            cypher_parser: Mutex::new(cypher::build_cypher_parser().unwrap()),
+            cypher_parser: cypher::Parser::new().unwrap(),
             database: db,
             namespaces: Mutex::new(namespaces),
         }))
@@ -85,6 +85,10 @@ pub enum StartupError {
     /// Error loading namespaces
     #[error("Error loading namespaces: {0}")]
     Namespaces(#[from] errors::Error),
+
+    /// Error parsing Cypher queries
+    #[error("Error initializing Cypher parser: {0}")]
+    Cypher(#[from] tree_sitter::LanguageError),
 }
 
 impl StartupError {
@@ -94,6 +98,7 @@ impl StartupError {
             StartupError::Config(err) => err.exit_code(),
             StartupError::Database(err) => err.exit_code(),
             StartupError::Namespaces(..) => 6,
+            StartupError::Cypher(..) => 7,
         }
     }
 }

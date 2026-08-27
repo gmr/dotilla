@@ -77,7 +77,7 @@ pub enum Keyword {
     Yield,
 }
 
-#[derive(Debug, Clone, PartialEq, Display)]
+#[derive(Debug, Clone, PartialEq, Display, EnumString)]
 pub enum Op {
     #[strum(serialize = "=")]
     Eq,
@@ -107,26 +107,37 @@ pub enum Op {
 
 #[derive(Debug, Clone, PartialEq, Display)]
 pub enum Punct {
-    #[strum(serialize = "(")]
-    LParen,
-    #[strum(serialize = ")")]
-    RParen,
-    #[strum(serialize = "{{")]
-    LBrace,
-    #[strum(serialize = "}}")]
-    RBrace,
-    #[strum(serialize = "[")]
-    LBracket,
-    #[strum(serialize = "]")]
-    RBracket,
-    #[strum(serialize = ",")]
-    Comma,
-    #[strum(serialize = ":")]
-    Colon,
-    #[strum(serialize = ".")]
-    Dot,
-    #[strum(serialize = ";")]
-    Semi,
-    #[strum(serialize = "|")]
-    Pipe,
+    LParen,   // (
+    RParen,   // )
+    LBrace,   // {
+    RBrace,   // }
+    LBracket, // [
+    RBracket, // ]
+    Comma,    // ,
+    Colon,    // :
+    Dot,      // .
+    Semi,     // ;
+    Pipe,     // |
+}
+
+// Implement TryFrom to cleanly map a single byte to your enum
+impl TryFrom<u8> for Punct {
+    type Error = ();
+
+    fn try_from(byte: u8) -> Result<Self, Self::Error> {
+        match byte {
+            b'(' => Ok(Punct::LParen),
+            b')' => Ok(Punct::RParen),
+            b'{' => Ok(Punct::LBrace),
+            b'}' => Ok(Punct::RBrace),
+            b'[' => Ok(Punct::LBracket),
+            b']' => Ok(Punct::RBracket),
+            b',' => Ok(Punct::Comma),
+            b':' => Ok(Punct::Colon),
+            b'.' => Ok(Punct::Dot),
+            b';' => Ok(Punct::Semi),
+            b'|' => Ok(Punct::Pipe),
+            _ => Err(()),
+        }
+    }
 }

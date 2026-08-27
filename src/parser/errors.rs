@@ -4,6 +4,8 @@ use super::token::Span;
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("invalid escape sequence: {span}")]
+    InvalidEscape { span: Span },
     #[error("unexpected character {byte} at {span}")]
     UnexpectedByte { byte: u8, span: Span },
     #[error("unexpected end of file")]

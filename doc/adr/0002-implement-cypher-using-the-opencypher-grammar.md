@@ -20,14 +20,11 @@ reads poorly over HTTP. SPARQL assumes an RDF triple model that does not match a
 labelled property graph. ISO GQL is the eventual standard but is young, and there
 is no usable Rust tooling for it.
 
-openCypher is the open specification of Cypher, and a `tree-sitter-cypher`
-grammar already exists, which means a parser is a dependency rather than a
-project.
+openCypher is the open specification of Cypher.
 
 ## Decision
 
-Implement the query language as openCypher, parsed with `tree-sitter` using the
-`tree-sitter-cypher` grammar.
+Implement the query language as openCypher.
 
 ## Consequences
 
@@ -38,18 +35,6 @@ Parsing is solved on day one. The grammar is maintained externally, so its
 coverage and its bugs are inherited rather than owned. Where the grammar is
 wrong or incomplete, the options are to patch it upstream or to work around it
 in lowering.
-
-tree-sitter produces a concrete syntax tree, not an abstract one, and it is
-error tolerant by design. That is the right behaviour for an editor and the
-wrong behaviour for a database, which must reject malformed input rather than
-guess. Lowering the CST into an internal representation, and rejecting anything
-containing an error node, is work that is now on us.
-
-`tree_sitter::Parser::parse` takes `&mut self`, so a parser cannot be shared
-through the `Arc<AppState>` the handlers see. It therefore sits behind a
-`Mutex`, which serialises parsing across concurrent requests. If that becomes a
-bottleneck the fix is a small pool of parsers, or one per request, not a
-redesign.
 
 Adopting Cypher's surface syntax is not the same as adopting Neo4j's behaviour.
 Procedures, `APOC`, and Neo4j-specific extensions are out of scope, and openCypher

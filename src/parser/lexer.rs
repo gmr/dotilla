@@ -87,7 +87,38 @@ impl Lexer {
                 });
             }
 
-            // Try to handle keywords and identifiers
+            // Handle backtick Identifiers
+            if byte == b'`' {
+                self.position += 1;
+                loop {
+                    match self.peek() {
+                        Some(b'`') if self.peek_at(1) == Some(b'`') => self.position += 2,
+                        Some(b'`') => {
+                            self.position += 1;
+                            break;
+                        }
+                        Some(_) => self.position += 1,
+                        None => {
+                            return Err(Error::UnterminatedIdentifier {
+                                span: Span {
+                                    start,
+                                    end: self.position,
+                                },
+                            });
+                        }
+                    }
+                }
+                let name = self.input[start + 1..self.position - 1].replace("``", "`");
+                return Ok(Token {
+                    kind: TokenKind::Identifier(name),
+                    span: Span {
+                        start,
+                        end: self.position,
+                    },
+                });
+            }
+
+            // Try to handle keywords and non-quoted identifiers
             if self.is_identifier_start(byte) {
                 while self.peek().is_some_and(|b| self.is_identifier_continue(b)) {
                     self.position += 1;
@@ -225,7 +256,7 @@ impl Lexer {
     }
 
     fn is_identifier_start(&self, byte: u8) -> bool {
-        byte.is_ascii_alphabetic() || byte == b'_' || byte == b'`' || byte >= 0x80
+        byte.is_ascii_alphabetic() || byte == b'_' || byte >= 0x80
     }
 
     fn is_identifier_continue(&self, byte: u8) -> bool {
@@ -287,6 +318,7 @@ mod tests {
                 WHERE p.fname = \"Ralph\"
                   AND p.mname = \"\\\"Ralphie\\\"\"
                   AND p.lname = \"Wiggum\"
+                  AND p.`is a` = \"Fire Engine\"
                 RETURN p.name"
                 .to_string(),
         );
@@ -294,7 +326,7 @@ mod tests {
             panic!("{:?}", lexer.lex().err());
         };
         println!("{:?}", tokens);
-        assert_eq!(tokens.len(), 42);
+        assert_eq!(tokens.len(), 48);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
         assert_eq!(tokens[1].kind, TokenKind::Punct(Punct::LParen));
         assert_eq!(tokens[2].kind, TokenKind::Identifier("p".to_string()));
@@ -335,10 +367,19 @@ mod tests {
         assert_eq!(tokens[34].kind, TokenKind::Identifier("lname".to_string()));
         assert_eq!(tokens[35].kind, TokenKind::Op(Op::Eq));
         assert_eq!(tokens[36].kind, TokenKind::String("Wiggum".to_string()));
-        assert_eq!(tokens[37].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[37].kind, TokenKind::Keyword(Keyword::And));
         assert_eq!(tokens[38].kind, TokenKind::Identifier("p".to_string()));
         assert_eq!(tokens[39].kind, TokenKind::Punct(Punct::Dot));
-        assert_eq!(tokens[40].kind, TokenKind::Identifier("name".to_string()));
-        assert_eq!(tokens[41].kind, TokenKind::Eof);
+        assert_eq!(tokens[40].kind, TokenKind::Identifier("is a".to_string()));
+        assert_eq!(tokens[41].kind, TokenKind::Op(Op::Eq));
+        assert_eq!(
+            tokens[42].kind,
+            TokenKind::String("Fire Engine".to_string())
+        );
+        assert_eq!(tokens[43].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[44].kind, TokenKind::Identifier("p".to_string()));
+        assert_eq!(tokens[45].kind, TokenKind::Punct(Punct::Dot));
+        assert_eq!(tokens[46].kind, TokenKind::Identifier("name".to_string()));
+        assert_eq!(tokens[47].kind, TokenKind::Eof);
     }
 }

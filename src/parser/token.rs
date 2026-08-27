@@ -13,6 +13,12 @@ pub struct Span {
     pub end: usize,
 }
 
+impl std::fmt::Display for Span {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(_f, "{}..{}", self.start, self.end)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Keyword(Keyword),

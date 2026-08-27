@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use super::errors::Error;
 use super::token::*;
 
 pub struct Lexer {
@@ -15,23 +16,22 @@ impl Lexer {
         }
     }
 
-    pub fn lex(&mut self) -> Vec<Token> {
+    pub fn lex(&mut self) -> Result<Vec<Token>, Error> {
         let mut tokens = Vec::new();
         loop {
-            let token = self.next_token();
+            let token = self.next_token()?;
             if token.kind == TokenKind::Eof {
                 tokens.push(token);
                 break;
             }
             tokens.push(token);
         }
-        tokens
+        Ok(tokens)
     }
 
-    pub fn next_token(&mut self) -> Token {
-        let mut start = self.position;
+    pub fn next_token(&mut self) -> Result<Token, Error> {
         while let Some(byte) = self.peek() {
-            start = self.position;
+            let start = self.position;
 
             // Try to handle comments
             match (byte, self.peek_at(1)) {
@@ -53,38 +53,38 @@ impl Lexer {
                     && let Ok(value) = Op::from_str(text)
                 {
                     self.position += 2;
-                    return Token {
+                    return Ok(Token {
                         kind: TokenKind::Op(value),
                         span: Span {
                             start,
                             end: self.position,
                         },
-                    };
+                    });
                 }
                 if let Ok(text) = std::str::from_utf8(&[byte])
                     && let Ok(value) = Op::from_str(text)
                 {
                     self.position += 1;
-                    return Token {
+                    return Ok(Token {
                         kind: TokenKind::Op(value),
                         span: Span {
                             start,
                             end: self.position,
                         },
-                    };
+                    });
                 }
             }
 
             // Try to match punctuation
             if let Ok(value) = Punct::try_from(byte) {
                 self.position += 1;
-                return Token {
+                return Ok(Token {
                     kind: TokenKind::Punct(value),
                     span: Span {
                         start,
                         end: self.position,
                     },
-                };
+                });
             }
 
             // Try to handle keywords and identifiers
@@ -94,16 +94,16 @@ impl Lexer {
                 }
                 match Keyword::from_str(&self.input[start..self.position]) {
                     Ok(value) => {
-                        return Token {
+                        return Ok(Token {
                             kind: TokenKind::Keyword(value),
                             span: Span {
                                 start,
                                 end: self.position,
                             },
-                        };
+                        });
                     }
                     _ => {
-                        return Token {
+                        return Ok(Token {
                             kind: TokenKind::Identifier(
                                 self.input[start..self.position].to_string(),
                             ),
@@ -111,9 +111,65 @@ impl Lexer {
                                 start,
                                 end: self.position,
                             },
-                        };
+                        });
                     }
                 }
+            }
+
+            // Handle Parameters
+            if byte == b'$' {
+                self.position += 1;
+                while self
+                    .peek()
+                    .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
+                {
+                    self.position += 1;
+                }
+                return Ok(Token {
+                    kind: TokenKind::Parameter(self.input[start + 1..self.position].to_string()),
+                    span: Span {
+                        start,
+                        end: self.position,
+                    },
+                });
+            }
+
+            // Handle string values
+            if self.is_quote(byte) {
+                self.position += 1;
+                let quote = byte;
+                let mut escaped = false;
+                loop {
+                    let current = match self.peek() {
+                        Some(current) => {
+                            self.position += 1;
+                            current
+                        }
+                        None => {
+                            return Err(Error::UnterminatedString {
+                                span: Span {
+                                    start,
+                                    end: self.position,
+                                },
+                            });
+                        }
+                    };
+                    if let Some(next) = self.peek()
+                        && current == b'\\'
+                        && self.is_quote(next)
+                    {
+                        escaped = !escaped;
+                    } else if !escaped && current == quote {
+                        break;
+                    }
+                }
+                return Ok(Token {
+                    kind: TokenKind::String(self.input[start + 1..self.position - 1].to_string()),
+                    span: Span {
+                        start,
+                        end: self.position,
+                    },
+                });
             }
 
             // Handle numeric literals
@@ -127,41 +183,50 @@ impl Lexer {
                     }
                     self.position += 1;
                 }
-                if is_float {
-                    let value: f64 = self.input[start..self.position].parse().unwrap();
-                    return Token {
+                if is_float && let Ok(value) = self.input[start..self.position].parse::<f64>() {
+                    return Ok(Token {
                         kind: TokenKind::Float(value),
                         span: Span {
                             start,
                             end: self.position,
                         },
-                    };
+                    });
                 }
-                let value: i64 = self.input[start..self.position].parse().unwrap();
-                return Token {
-                    kind: TokenKind::Integer(value),
-                    span: Span {
-                        start,
-                        end: self.position,
-                    },
+                if let Ok(value) = self.input[start..self.position].parse::<i64>() {
+                    return Ok(Token {
+                        kind: TokenKind::Integer(value),
+                        span: Span {
+                            start,
+                            end: self.position,
+                        },
+                    });
                 };
             }
 
             if self.is_whitespace(byte) {
                 self.position += 1;
+                continue;
             }
+
+            return Err(Error::UnexpectedByte {
+                byte,
+                span: Span {
+                    start,
+                    end: start + 1,
+                },
+            });
         }
-        Token {
+        Ok(Token {
             kind: TokenKind::Eof,
             span: Span {
-                start,
+                start: self.position,
                 end: self.position,
             },
-        }
+        })
     }
 
     fn is_identifier_start(&self, byte: u8) -> bool {
-        byte.is_ascii_alphabetic() || byte == b'_' || byte >= 0x80
+        byte.is_ascii_alphabetic() || byte == b'_' || byte == b'`' || byte >= 0x80
     }
 
     fn is_identifier_continue(&self, byte: u8) -> bool {
@@ -173,6 +238,10 @@ impl Lexer {
             byte,
             b'=' | b'<' | b'>' | b'+' | b'-' | b'*' | b'/' | b'%' | b'^'
         )
+    }
+
+    fn is_quote(&self, byte: u8) -> bool {
+        matches!(byte, b'"' | b'\'')
     }
 
     fn is_whitespace(&self, byte: u8) -> bool {
@@ -214,10 +283,15 @@ mod tests {
 
     #[test]
     fn test_lexer() {
-        let mut lexer = Lexer::new("MATCH (p:Person {age: 30}) RETURN p.name".to_string());
-        let tokens = lexer.lex();
+        let mut lexer = Lexer::new(
+            "MATCH (p:Person {age: 30, gender: $gender, income > 123.45}) WHERE p.name = \"Ralph\" RETURN p.name"
+                .to_string(),
+        );
+        let Ok(tokens) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
         println!("{:?}", tokens);
-        //assert_eq!(tokens.len(), 16);
+        assert_eq!(tokens.len(), 30);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
         assert_eq!(tokens[1].kind, TokenKind::Punct(Punct::LParen));
         assert_eq!(tokens[2].kind, TokenKind::Identifier("p".to_string()));
@@ -227,12 +301,26 @@ mod tests {
         assert_eq!(tokens[6].kind, TokenKind::Identifier("age".to_string()));
         assert_eq!(tokens[7].kind, TokenKind::Punct(Punct::Colon));
         assert_eq!(tokens[8].kind, TokenKind::Integer(30));
-        assert_eq!(tokens[9].kind, TokenKind::Punct(Punct::RBrace));
-        assert_eq!(tokens[10].kind, TokenKind::Punct(Punct::RParen));
-        assert_eq!(tokens[11].kind, TokenKind::Keyword(Keyword::Return));
-        assert_eq!(tokens[12].kind, TokenKind::Identifier("p".to_string()));
-        assert_eq!(tokens[13].kind, TokenKind::Punct(Punct::Dot));
-        assert_eq!(tokens[14].kind, TokenKind::Identifier("name".to_string()));
-        assert_eq!(tokens[15].kind, TokenKind::Eof);
+        assert_eq!(tokens[9].kind, TokenKind::Punct(Punct::Comma));
+        assert_eq!(tokens[10].kind, TokenKind::Identifier("gender".to_string()));
+        assert_eq!(tokens[11].kind, TokenKind::Punct(Punct::Colon));
+        assert_eq!(tokens[12].kind, TokenKind::Parameter("gender".to_string()));
+        assert_eq!(tokens[13].kind, TokenKind::Punct(Punct::Comma));
+        assert_eq!(tokens[14].kind, TokenKind::Identifier("income".to_string()));
+        assert_eq!(tokens[15].kind, TokenKind::Op(Op::Gt));
+        assert_eq!(tokens[16].kind, TokenKind::Float(123.45));
+        assert_eq!(tokens[17].kind, TokenKind::Punct(Punct::RBrace));
+        assert_eq!(tokens[18].kind, TokenKind::Punct(Punct::RParen));
+        assert_eq!(tokens[19].kind, TokenKind::Keyword(Keyword::Where));
+        assert_eq!(tokens[20].kind, TokenKind::Identifier("p".to_string()));
+        assert_eq!(tokens[21].kind, TokenKind::Punct(Punct::Dot));
+        assert_eq!(tokens[22].kind, TokenKind::Identifier("name".to_string()));
+        assert_eq!(tokens[23].kind, TokenKind::Op(Op::Eq));
+        assert_eq!(tokens[24].kind, TokenKind::String("Ralph".to_string()));
+        assert_eq!(tokens[25].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[26].kind, TokenKind::Identifier("p".to_string()));
+        assert_eq!(tokens[27].kind, TokenKind::Punct(Punct::Dot));
+        assert_eq!(tokens[28].kind, TokenKind::Identifier("name".to_string()));
+        assert_eq!(tokens[29].kind, TokenKind::Eof);
     }
 }

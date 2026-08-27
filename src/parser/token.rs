@@ -122,6 +122,7 @@ pub enum Punct {
     Comma,    // ,
     Colon,    // :
     Dot,      // .
+    DotDot,   // ..
     Semi,     // ;
     Pipe,     // |
 }

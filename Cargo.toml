@@ -24,8 +24,6 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7.19"
 toml = "1.1.4"
 tower-http = { version = "0.7.0", features = ["timeout"] }
-tree-sitter = "0.26.11"
-tree-sitter-cypher = "0.2.6"
 
 [dev-dependencies]
 assert_cmd = "2"

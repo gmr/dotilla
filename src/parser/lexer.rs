@@ -154,12 +154,11 @@ impl Lexer {
                             });
                         }
                     };
-                    if let Some(next) = self.peek()
-                        && current == b'\\'
-                        && self.is_quote(next)
-                    {
-                        escaped = !escaped;
-                    } else if !escaped && current == quote {
+                    if escaped {
+                        escaped = false;
+                    } else if current == b'\\' {
+                        escaped = true;
+                    } else if current == quote {
                         break;
                     }
                 }
@@ -284,14 +283,18 @@ mod tests {
     #[test]
     fn test_lexer() {
         let mut lexer = Lexer::new(
-            "MATCH (p:Person {age: 30, gender: $gender, income > 123.45}) WHERE p.name = \"Ralph\" RETURN p.name"
+            "MATCH (p:Person {age: 30, gender: $gender, income > 123.45})
+                WHERE p.fname = \"Ralph\"
+                  AND p.mname = \"\\\"Ralphie\\\"\"
+                  AND p.lname = \"Wiggum\"
+                RETURN p.name"
                 .to_string(),
         );
         let Ok(tokens) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
         println!("{:?}", tokens);
-        assert_eq!(tokens.len(), 30);
+        assert_eq!(tokens.len(), 42);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
         assert_eq!(tokens[1].kind, TokenKind::Punct(Punct::LParen));
         assert_eq!(tokens[2].kind, TokenKind::Identifier("p".to_string()));
@@ -314,13 +317,28 @@ mod tests {
         assert_eq!(tokens[19].kind, TokenKind::Keyword(Keyword::Where));
         assert_eq!(tokens[20].kind, TokenKind::Identifier("p".to_string()));
         assert_eq!(tokens[21].kind, TokenKind::Punct(Punct::Dot));
-        assert_eq!(tokens[22].kind, TokenKind::Identifier("name".to_string()));
+        assert_eq!(tokens[22].kind, TokenKind::Identifier("fname".to_string()));
         assert_eq!(tokens[23].kind, TokenKind::Op(Op::Eq));
         assert_eq!(tokens[24].kind, TokenKind::String("Ralph".to_string()));
-        assert_eq!(tokens[25].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[25].kind, TokenKind::Keyword(Keyword::And));
         assert_eq!(tokens[26].kind, TokenKind::Identifier("p".to_string()));
         assert_eq!(tokens[27].kind, TokenKind::Punct(Punct::Dot));
-        assert_eq!(tokens[28].kind, TokenKind::Identifier("name".to_string()));
-        assert_eq!(tokens[29].kind, TokenKind::Eof);
+        assert_eq!(tokens[28].kind, TokenKind::Identifier("mname".to_string()));
+        assert_eq!(tokens[29].kind, TokenKind::Op(Op::Eq));
+        assert_eq!(
+            tokens[30].kind,
+            TokenKind::String("\\\"Ralphie\\\"".to_string())
+        );
+        assert_eq!(tokens[31].kind, TokenKind::Keyword(Keyword::And));
+        assert_eq!(tokens[32].kind, TokenKind::Identifier("p".to_string()));
+        assert_eq!(tokens[33].kind, TokenKind::Punct(Punct::Dot));
+        assert_eq!(tokens[34].kind, TokenKind::Identifier("lname".to_string()));
+        assert_eq!(tokens[35].kind, TokenKind::Op(Op::Eq));
+        assert_eq!(tokens[36].kind, TokenKind::String("Wiggum".to_string()));
+        assert_eq!(tokens[37].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[38].kind, TokenKind::Identifier("p".to_string()));
+        assert_eq!(tokens[39].kind, TokenKind::Punct(Punct::Dot));
+        assert_eq!(tokens[40].kind, TokenKind::Identifier("name".to_string()));
+        assert_eq!(tokens[41].kind, TokenKind::Eof);
     }
 }

@@ -263,17 +263,24 @@ impl Lexer {
 
             // Handle numeric values
             if byte.is_ascii_digit() {
+                let mut is_exponent = false;
                 let mut is_float = false;
                 while let Some(b) = self.peek()
                     && (b.is_ascii_digit()
-                        || (b == b'.' && !is_float && self.peek_at(1) != Some(b'.')))
+                        || (b == b'.' && !is_float && self.peek_at(1) != Some(b'.'))
+                        || ((b == b'e' || b == b'E')
+                            && self.peek_at(1).is_some_and(|d| d.is_ascii_digit())))
                 {
                     if b == b'.' {
                         is_float = true;
+                    } else if b == b'e' || b == b'E' {
+                        is_exponent = true;
                     }
                     self.position += 1;
                 }
-                if is_float && let Ok(value) = self.input[start..self.position].parse::<f64>() {
+                if (is_exponent || is_float)
+                    && let Ok(value) = self.input[start..self.position].parse::<f64>()
+                {
                     return Ok(Token {
                         kind: TokenKind::Float(value),
                         span: Span {
@@ -390,7 +397,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lexer() {
+    fn test_lexer_case_one() {
         let mut lexer = Lexer::new(
             "MATCH (p:Person {age: 30, gender: $gender, income > 123.45})-[a:Attends]->(s:School)
                 WHERE p.fname = \"Ralph\"
@@ -491,14 +498,18 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_edge_cases() {
-        let mut lexer =
-            Lexer::new("MATCH (a:Person)-[:KNOWS*1..3]->(b:Person) RETURN b".to_string());
+    fn test_lexer_case_two() {
+        let mut lexer = Lexer::new(
+            "MATCH (a:Person)-[:KNOWS*1..3]->(b:Person)
+             WHERE b.foo > 1e3
+             RETURN b"
+                .to_string(),
+        );
         let Ok(tokens) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
         println!("{:?}", tokens);
-        assert_eq!(tokens.len(), 26);
+        assert_eq!(tokens.len(), 32);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
         assert_eq!(tokens[1].kind, TokenKind::Punct(Punct::LParen));
         assert_eq!(tokens[2].kind, TokenKind::Identifier("a".to_string()));
@@ -522,8 +533,14 @@ mod tests {
         assert_eq!(tokens[20].kind, TokenKind::Punct(Punct::Colon));
         assert_eq!(tokens[21].kind, TokenKind::Identifier("Person".to_string()));
         assert_eq!(tokens[22].kind, TokenKind::Punct(Punct::RParen));
-        assert_eq!(tokens[23].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[23].kind, TokenKind::Keyword(Keyword::Where));
         assert_eq!(tokens[24].kind, TokenKind::Identifier("b".to_string()));
-        assert_eq!(tokens[25].kind, TokenKind::Eof);
+        assert_eq!(tokens[25].kind, TokenKind::Punct(Punct::Dot));
+        assert_eq!(tokens[26].kind, TokenKind::Identifier("foo".to_string()));
+        assert_eq!(tokens[27].kind, TokenKind::Op(Op::Gt));
+        assert_eq!(tokens[28].kind, TokenKind::Float(1000.0));
+        assert_eq!(tokens[29].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[30].kind, TokenKind::Identifier("b".to_string()));
+        assert_eq!(tokens[31].kind, TokenKind::Eof);
     }
 }

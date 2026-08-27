@@ -31,11 +31,6 @@ Implement the query language as openCypher.
 Users who know Neo4j can use dotilla without learning anything new, and the
 existing body of Cypher documentation and examples applies.
 
-Parsing is solved on day one. The grammar is maintained externally, so its
-coverage and its bugs are inherited rather than owned. Where the grammar is
-wrong or incomplete, the options are to patch it upstream or to work around it
-in lowering.
-
 Adopting Cypher's surface syntax is not the same as adopting Neo4j's behaviour.
 Procedures, `APOC`, and Neo4j-specific extensions are out of scope, and openCypher
 itself diverges from both Neo4j Cypher and ISO GQL. Full compatibility with

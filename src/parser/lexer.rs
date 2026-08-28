@@ -297,12 +297,12 @@ impl Lexer {
                                 value.push(b'\x0c');
                                 self.position += 1
                             }
-                            Some(b'n') => self.escapted_string_push(&mut value, b'\n'),
-                            Some(b'r') => self.escapted_string_push(&mut value, b'\r'),
-                            Some(b't') => self.escapted_string_push(&mut value, b'\t'),
-                            Some(b'\\') => self.escapted_string_push(&mut value, b'\\'),
-                            Some(b'\'') => self.escapted_string_push(&mut value, b'\''),
-                            Some(b'"') => self.escapted_string_push(&mut value, b'"'),
+                            Some(b'n') => self.escaped_string_push(&mut value, b'\n'),
+                            Some(b'r') => self.escaped_string_push(&mut value, b'\r'),
+                            Some(b't') => self.escaped_string_push(&mut value, b'\t'),
+                            Some(b'\\') => self.escaped_string_push(&mut value, b'\\'),
+                            Some(b'\'') => self.escaped_string_push(&mut value, b'\''),
+                            Some(b'"') => self.escaped_string_push(&mut value, b'"'),
                             Some(b'u') => {
                                 self.position += 1;
                                 let n = self.position;
@@ -381,7 +381,7 @@ impl Lexer {
         })
     }
 
-    fn escapted_string_push(&mut self, value: &mut Vec<u8>, byte: u8) {
+    fn escaped_string_push(&mut self, value: &mut Vec<u8>, byte: u8) {
         value.push(byte);
         self.position += 1;
     }

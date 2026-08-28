@@ -121,7 +121,6 @@ impl Lexer {
                     }
                 }
                 if is_float && let Ok(value) = self.input[start..self.position].parse::<f64>() {
-                    println!("float: {}", value);
                     return Ok(Token {
                         kind: TokenKind::Float(value),
                         span: Span {
@@ -130,15 +129,17 @@ impl Lexer {
                         },
                     });
                 }
-                if let Ok(value) = self.input[start..self.position].parse::<i64>() {
-                    println!("int: {}", value);
-                    return Ok(Token {
-                        kind: TokenKind::Integer(value),
-                        span: Span {
-                            start,
-                            end: self.position,
-                        },
-                    });
+                match self.input[start..self.position].parse::<i64>() {
+                    Ok(value) => {
+                        return Ok(Token {
+                            kind: TokenKind::Integer(value),
+                            span: Span {
+                                start,
+                                end: self.position,
+                            },
+                        });
+                    }
+                    Err(_) => return Err(Error::IntegerOverflow),
                 };
             }
 
@@ -614,5 +615,14 @@ mod tests {
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Return));
         assert_eq!(tokens[1].kind, TokenKind::String("café".to_string()));
         assert_eq!(tokens[2].kind, TokenKind::Eof);
+    }
+
+    #[test]
+    fn test_lexer_case_four() {
+        let mut lexer = Lexer::new("RETURN 99999999999999999999".to_string());
+        let Err(err) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        assert_eq!(err, Error::IntegerOverflow);
     }
 }

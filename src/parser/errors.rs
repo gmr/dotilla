@@ -2,12 +2,14 @@ use thiserror::Error;
 
 use super::token::Span;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum Error {
     #[error("encoding error: {0}")]
     EncodingError(#[from] std::string::FromUtf8Error),
     #[error("invalid escape sequence: {span}")]
     InvalidEscape { span: Span },
+    #[error("integer overflow")]
+    IntegerOverflow,
     #[error("unexpected character {byte} at {span}")]
     UnexpectedByte { byte: u8, span: Span },
     #[error("unexpected end of file")]

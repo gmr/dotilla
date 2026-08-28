@@ -182,6 +182,14 @@ impl Lexer {
                         }
                     }
                 }
+                if (start + 1) == (self.position - 1) {
+                    return Err(Error::InvalidIdentifier {
+                        span: Span {
+                            start,
+                            end: self.position,
+                        },
+                    });
+                }
                 let name = self.input[start + 1..self.position - 1].replace("``", "`");
                 return Ok(Token {
                     kind: TokenKind::Identifier(name),
@@ -241,6 +249,14 @@ impl Lexer {
                     .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
                 {
                     self.position += 1;
+                }
+                if (start + 1) == self.position {
+                    return Err(Error::InvalidParameter {
+                        span: Span {
+                            start,
+                            end: self.position,
+                        },
+                    });
                 }
                 return Ok(Token {
                     kind: TokenKind::Parameter(self.input[start + 1..self.position].to_string()),
@@ -651,5 +667,23 @@ mod tests {
             panic!("{:?}", lexer.lex().err());
         };
         assert!(matches!(err, Error::NumberOutOfRange { .. }));
+    }
+
+    #[test]
+    fn test_lexer_case_six() {
+        let mut lexer = Lexer::new("RETURN $ + 1".to_string());
+        let Err(err) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        assert!(matches!(err, Error::InvalidParameter { .. }));
+    }
+
+    #[test]
+    fn test_lexer_case_seven() {
+        let mut lexer = Lexer::new("RETURN `` AS c".to_string());
+        let Err(err) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        assert!(matches!(err, Error::InvalidIdentifier { .. }));
     }
 }

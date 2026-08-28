@@ -8,6 +8,10 @@ pub enum Error {
     EncodingError(#[from] std::string::FromUtf8Error),
     #[error("invalid escape sequence: {span}")]
     InvalidEscape { span: Span },
+    #[error("invalid identifier: {span}")]
+    InvalidIdentifier { span: Span },
+    #[error("invalid parameter: {span}")]
+    InvalidParameter { span: Span },
     #[error("integer overflow: {span}")]
     IntegerOverflow { span: Span },
     #[error("number out of range: {span}")]

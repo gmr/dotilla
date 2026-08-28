@@ -20,6 +20,8 @@ pub enum Error {
     UnexpectedByte { byte: u8, span: Span },
     #[error("unexpected end of file")]
     UnexpectedEof,
+    #[error("unterminated comment: {span}")]
+    UnterminatedComment { span: Span },
     #[error("unterminated identifier: {span}")]
     UnterminatedIdentifier { span: Span },
     #[error("unterminated string: {span}")]

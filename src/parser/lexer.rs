@@ -40,7 +40,7 @@ impl Lexer {
                     continue;
                 }
                 (b'/', Some(b'*')) => {
-                    self.skip_block_comment();
+                    self.skip_block_comment()?;
                     continue;
                 }
                 _ => {}
@@ -430,13 +430,25 @@ impl Lexer {
         self.input.as_bytes().get(index).copied()
     }
 
-    fn skip_block_comment(&mut self) {
+    fn skip_block_comment(&mut self) -> Result<(), Error> {
+        let start = self.position;
+        let mut closed = false;
         while let Some(byte) = self.peek() {
             if matches!(byte, b'*') && self.peek_at(1) == Some(b'/') {
                 self.position += 2;
+                closed = true;
                 break;
             }
             self.position += 1;
+        }
+        match closed {
+            true => Ok(()),
+            false => Err(Error::UnterminatedComment {
+                span: Span {
+                    start,
+                    end: self.position,
+                },
+            }),
         }
     }
 
@@ -685,5 +697,14 @@ mod tests {
             panic!("{:?}", lexer.lex().err());
         };
         assert!(matches!(err, Error::InvalidIdentifier { .. }));
+    }
+
+    #[test]
+    fn test_lexer_case_eight() {
+        let mut lexer = Lexer::new("RETURN /* start of unfinished comment".to_string());
+        let Err(err) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        assert!(matches!(err, Error::UnterminatedComment { .. }));
     }
 }

@@ -236,7 +236,7 @@ impl Lexer {
             if self.is_quote(byte) {
                 self.position += 1;
                 let quote = byte;
-                let mut value = String::new();
+                let mut value: Vec<u8> = Vec::new();
                 loop {
                     let current = match self.peek() {
                         Some(current) => {
@@ -255,11 +255,11 @@ impl Lexer {
                     if current == b'\\' {
                         match self.peek() {
                             Some(b'b') => {
-                                value.push('\u{0008}');
+                                value.push(b'\x08');
                                 self.position += 1
                             }
                             Some(b'f') => {
-                                value.push('\u{000c}');
+                                value.push(b'\x0c');
                                 self.position += 1
                             }
                             Some(b'n') => self.escapted_string_push(&mut value, b'\n'),
@@ -271,30 +271,24 @@ impl Lexer {
                             Some(b'u') => {
                                 self.position += 1;
                                 let n = self.position;
-                                let ch = self
-                                    .hex_escape(
-                                        4,
-                                        Span {
-                                            start: n,
-                                            end: self.position,
-                                        },
-                                    )
-                                    .unwrap();
-                                value.push(ch);
+                                value.extend(self.hex_escape(
+                                    4,
+                                    Span {
+                                        start: n,
+                                        end: self.position,
+                                    },
+                                )?);
                             }
                             Some(b'U') => {
                                 self.position += 1;
                                 let n = self.position;
-                                let ch = self
-                                    .hex_escape(
-                                        8,
-                                        Span {
-                                            start: n,
-                                            end: self.position,
-                                        },
-                                    )
-                                    .unwrap();
-                                value.push(ch);
+                                value.extend(self.hex_escape(
+                                    8,
+                                    Span {
+                                        start: n,
+                                        end: self.position,
+                                    },
+                                )?);
                             }
                             Some(_) => {
                                 return Err(Error::InvalidEscape {
@@ -316,11 +310,11 @@ impl Lexer {
                     } else if current == quote {
                         break;
                     } else {
-                        value.push(current as char);
+                        value.push(current);
                     }
                 }
                 return Ok(Token {
-                    kind: TokenKind::String(value),
+                    kind: TokenKind::String(String::from_utf8(value)?),
                     span: Span {
                         start,
                         end: self.position,
@@ -352,15 +346,21 @@ impl Lexer {
         })
     }
 
-    fn hex_escape(&mut self, n: usize, span: Span) -> Result<char, Error> {
+    fn escapted_string_push(&mut self, value: &mut Vec<u8>, byte: u8) {
+        value.push(byte);
+        self.position += 1;
+    }
+
+    fn hex_escape(&mut self, n: usize, span: Span) -> Result<Vec<u8>, Error> {
         let hex = self
             .input
             .get(self.position..self.position + n)
             .ok_or(Error::InvalidEscape { span })?;
         let code = u32::from_str_radix(hex, 16).map_err(|_| Error::InvalidEscape { span })?;
         let ch = char::from_u32(code).ok_or(Error::InvalidEscape { span })?;
+        let value = ch.encode_utf8(&mut [0; 4]).as_bytes().to_vec();
         self.position += n;
-        Ok(ch)
+        Ok(value)
     }
 
     fn is_identifier_start(&self, byte: u8) -> bool {
@@ -413,11 +413,6 @@ impl Lexer {
             self.position += 1;
         }
     }
-
-    fn escapted_string_push(&mut self, value: &mut String, byte: u8) {
-        value.push(char::from(byte));
-        self.position += 1;
-    }
 }
 
 #[cfg(test)]
@@ -440,7 +435,7 @@ mod tests {
             panic!("{:?}", lexer.lex().err());
         };
         println!("{:?}", tokens);
-        //assert_eq!(tokens.len(), 80);
+        assert_eq!(tokens.len(), 80);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
         assert_eq!(tokens[1].kind, TokenKind::Punct(Punct::LParen));
         assert_eq!(tokens[2].kind, TokenKind::Identifier("p".to_string()));
@@ -606,5 +601,18 @@ mod tests {
         assert_eq!(tokens[55].kind, TokenKind::Op(Op::Minus));
         assert_eq!(tokens[56].kind, TokenKind::Integer(1));
         assert_eq!(tokens[57].kind, TokenKind::Eof);
+    }
+
+    #[test]
+    fn test_lexer_case_three() {
+        let mut lexer = Lexer::new("RETURN \"café\"".to_string());
+        let Ok(tokens) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        println!("{:?}", tokens);
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[1].kind, TokenKind::String("café".to_string()));
+        assert_eq!(tokens[2].kind, TokenKind::Eof);
     }
 }

@@ -109,6 +109,10 @@ pub enum Op {
     Percent,
     #[strum(serialize = "^")]
     Caret,
+    #[strum(serialize = "+=")]
+    PlusEq,
+    #[strum(serialize = "=~")]
+    EqTilde,
 }
 
 #[derive(Debug, Clone, PartialEq, Display)]

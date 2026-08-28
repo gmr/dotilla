@@ -43,8 +43,31 @@ impl Lexer {
                     self.skip_block_comment()?;
                     continue;
                 }
+                (b'+', Some(b'=')) => {
+                    self.position += 2;
+                    return Ok(Token {
+                        kind: TokenKind::Op(Op::PlusEq),
+                        span: Span {
+                            start,
+                            end: self.position,
+                        },
+                    });
+                }
+                (b'=', Some(b'~')) => {
+                    self.position += 2;
+                    return Ok(Token {
+                        kind: TokenKind::Op(Op::EqTilde),
+                        span: Span {
+                            start,
+                            end: self.position,
+                        },
+                    });
+                }
                 _ => {}
             }
+
+            // @TODO: Need to handle hexadecimal values
+            // @TODO: Need to handle octal values
 
             // Handle dot-dot
             if byte == b'.' && self.peek_at(1) == Some(b'.') {
@@ -79,6 +102,80 @@ impl Lexer {
                     self.position += 1;
                     return Ok(Token {
                         kind: TokenKind::Op(value),
+                        span: Span {
+                            start,
+                            end: self.position,
+                        },
+                    });
+                }
+            }
+
+            // Handle Hex values
+            if byte == b'0' && self.peek_at(1) == Some(b'x') {
+                self.position += 2;
+                while let Some(value) = self.peek() {
+                    if !value.is_ascii_hexdigit() {
+                        break;
+                    }
+                    self.position += 1;
+                }
+
+                let value: i64 =
+                    match i64::from_str_radix(&self.input[start + 2..self.position], 16) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            println!("{:?}", err);
+                            return Err(Error::IntegerOverflow {
+                                span: Span {
+                                    start,
+                                    end: self.position,
+                                },
+                            });
+                        }
+                    };
+                return Ok(Token {
+                    kind: TokenKind::Integer(value),
+                    span: Span {
+                        start,
+                        end: self.position,
+                    },
+                });
+            }
+
+            // Handle Octal values
+            if byte == b'0'
+                && self
+                    .peek_at(1)
+                    .is_some_and(|d| d.is_ascii_digit() || d == b'o')
+            {
+                let mut offset = start + 1;
+                if self.peek_at(1) == Some(b'o') {
+                    self.position += 1;
+                    offset += 1;
+                }
+                self.position += 1;
+                while let Some(value) = self.peek() {
+                    if !value.is_ascii_digit() {
+                        break;
+                    }
+                    self.position += 1;
+                }
+                if (self.position - offset) == 3 {
+                    let value: i64 =
+                        match i64::from_str_radix(&self.input[offset..self.position], 8) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                println!("{:?}", err);
+                                return Err(Error::IntegerOverflow {
+                                    span: Span {
+                                        start,
+                                        end: self.position,
+                                    },
+                                });
+                            }
+                        };
+                    return Ok(Token {
+                        kind: TokenKind::Integer(value),
                         span: Span {
                             start,
                             end: self.position,
@@ -357,8 +454,6 @@ impl Lexer {
                 });
             }
 
-            // @TODO: Need to handle hexadecimal values
-
             if self.is_whitespace(byte) {
                 self.position += 1;
                 continue;
@@ -481,7 +576,6 @@ mod tests {
         let Ok(tokens) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
-        println!("{:?}", tokens);
         assert_eq!(tokens.len(), 80);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
         assert_eq!(tokens[1].kind, TokenKind::Punct(Punct::LParen));
@@ -588,7 +682,6 @@ mod tests {
         let Ok(tokens) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
-        println!("{:?}", tokens);
         assert_eq!(tokens.len(), 58);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
         assert_eq!(tokens[1].kind, TokenKind::Punct(Punct::LParen));
@@ -656,7 +749,6 @@ mod tests {
         let Ok(tokens) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
-        println!("{:?}", tokens);
         assert_eq!(tokens.len(), 3);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Return));
         assert_eq!(tokens[1].kind, TokenKind::String("café".to_string()));
@@ -706,5 +798,39 @@ mod tests {
             panic!("{:?}", lexer.lex().err());
         };
         assert!(matches!(err, Error::UnterminatedComment { .. }));
+    }
+
+    #[test]
+    fn test_lexer_case_nine() {
+        let mut lexer = Lexer::new("RETURN 0xff, 0755, 0o755".to_string());
+        let Ok(tokens) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        assert_eq!(tokens.len(), 7);
+        assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[1].kind, TokenKind::Integer(255));
+        assert_eq!(tokens[2].kind, TokenKind::Punct(Punct::Comma));
+        assert_eq!(tokens[3].kind, TokenKind::Integer(493));
+        assert_eq!(tokens[4].kind, TokenKind::Punct(Punct::Comma));
+        assert_eq!(tokens[5].kind, TokenKind::Integer(493));
+        assert_eq!(tokens[6].kind, TokenKind::Eof);
+    }
+
+    #[test]
+    fn test_lexer_case_ten() {
+        let mut lexer = Lexer::new("RETURN 0x56BC75E2D630FFFFF".to_string());
+        let Err(err) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        assert!(matches!(err, Error::IntegerOverflow { .. }));
+    }
+
+    #[test]
+    fn test_lexer_case_eleven() {
+        let mut lexer = Lexer::new("RETURN 0o56BC75E2D630FFFFF".to_string());
+        let Err(err) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        assert!(matches!(err, Error::IntegerOverflow { .. }));
     }
 }

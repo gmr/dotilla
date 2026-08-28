@@ -46,6 +46,57 @@ impl Lexer {
                 _ => {}
             }
 
+            // Handle dot-dot
+            if byte == b'.' && self.peek_at(1) == Some(b'.') {
+                self.position += 2;
+                return Ok(Token {
+                    kind: TokenKind::Punct(Punct::DotDot),
+                    span: Span {
+                        start,
+                        end: self.position,
+                    },
+                });
+            }
+
+            // Handle numeric values
+            if byte.is_ascii_digit()
+                || (matches!(byte, b'.' | b'-' | b'+')
+                    && self.peek_at(1).is_some_and(|d| d.is_ascii_digit()))
+            {
+                let mut is_float = false;
+                while let Some(value) = self.peek() {
+                    if value.is_ascii_digit()
+                        || (matches!(value, b'.' | b'-' | b'+' | b'e' | b'E')
+                            && self.peek_at(1).is_some_and(|d| d.is_ascii_digit()))
+                    {
+                        self.position += 1;
+                    } else {
+                        break;
+                    }
+                    if !is_float && matches!(value, b'.' | b'e' | b'E') {
+                        is_float = true;
+                    }
+                }
+                if is_float && let Ok(value) = self.input[start..self.position].parse::<f64>() {
+                    return Ok(Token {
+                        kind: TokenKind::Float(value),
+                        span: Span {
+                            start,
+                            end: self.position,
+                        },
+                    });
+                }
+                if let Ok(value) = self.input[start..self.position].parse::<i64>() {
+                    return Ok(Token {
+                        kind: TokenKind::Integer(value),
+                        span: Span {
+                            start,
+                            end: self.position,
+                        },
+                    });
+                };
+            }
+
             // Try to handle operators
             if self.is_operator_start(byte) {
                 if let Some(b2) = self.peek_at(1)
@@ -73,55 +124,6 @@ impl Lexer {
                         },
                     });
                 }
-            }
-
-            // Handle dot-dot
-            if byte == b'.' && self.peek_at(1) == Some(b'.') {
-                self.position += 2;
-                return Ok(Token {
-                    kind: TokenKind::Punct(Punct::DotDot),
-                    span: Span {
-                        start,
-                        end: self.position,
-                    },
-                });
-            }
-
-            // Handle numeric values
-            if byte.is_ascii_digit()
-                || (byte == b'.' || byte == b'-' || byte == b'+')
-                    && self.peek_at(1).is_some_and(|d| d.is_ascii_digit())
-            {
-                let mut is_float = false;
-                while let Some(b) = self.peek()
-                    && (b.is_ascii_digit()
-                        || (b == b'.' || b == b'e' || b == b'E' || b == b'-' || b == b'+')
-                            && self.peek_at(1).is_some_and(|d| d.is_ascii_digit()))
-                {
-                    if b == b'.' || b == b'e' || b == b'E' {
-                        is_float = true;
-                        self.position += 1;
-                    }
-                    self.position += 1;
-                }
-                if is_float && let Ok(value) = self.input[start..self.position].parse::<f64>() {
-                    return Ok(Token {
-                        kind: TokenKind::Float(value),
-                        span: Span {
-                            start,
-                            end: self.position,
-                        },
-                    });
-                }
-                if let Ok(value) = self.input[start..self.position].parse::<i64>() {
-                    return Ok(Token {
-                        kind: TokenKind::Integer(value),
-                        span: Span {
-                            start,
-                            end: self.position,
-                        },
-                    });
-                };
             }
 
             // Try to match punctuation

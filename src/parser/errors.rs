@@ -8,8 +8,10 @@ pub enum Error {
     EncodingError(#[from] std::string::FromUtf8Error),
     #[error("invalid escape sequence: {span}")]
     InvalidEscape { span: Span },
-    #[error("integer overflow")]
-    IntegerOverflow,
+    #[error("integer overflow: {span}")]
+    IntegerOverflow { span: Span },
+    #[error("number out of range: {span}")]
+    NumberOutOfRange { span: Span },
     #[error("unexpected character {byte} at {span}")]
     UnexpectedByte { byte: u8, span: Span },
     #[error("unexpected end of file")]

@@ -120,7 +120,18 @@ impl Lexer {
                         break;
                     }
                 }
-                if is_float && let Ok(value) = self.input[start..self.position].parse::<f64>() {
+                if is_float {
+                    let value = self.input[start..self.position]
+                        .parse::<f64>()
+                        .unwrap_or(0.0);
+                    if !value.is_finite() {
+                        return Err(Error::NumberOutOfRange {
+                            span: Span {
+                                start,
+                                end: self.position,
+                            },
+                        });
+                    }
                     return Ok(Token {
                         kind: TokenKind::Float(value),
                         span: Span {
@@ -139,7 +150,14 @@ impl Lexer {
                             },
                         });
                     }
-                    Err(_) => return Err(Error::IntegerOverflow),
+                    Err(_) => {
+                        return Err(Error::IntegerOverflow {
+                            span: Span {
+                                start,
+                                end: self.position,
+                            },
+                        });
+                    }
                 };
             }
 
@@ -623,6 +641,15 @@ mod tests {
         let Err(err) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
-        assert_eq!(err, Error::IntegerOverflow);
+        assert!(matches!(err, Error::IntegerOverflow { .. }));
+    }
+
+    #[test]
+    fn test_lexer_case_five() {
+        let mut lexer = Lexer::new("RETURN 1e400".to_string());
+        let Err(err) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        assert!(matches!(err, Error::NumberOutOfRange { .. }));
     }
 }

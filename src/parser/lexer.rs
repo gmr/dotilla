@@ -242,7 +242,7 @@ impl Lexer {
                         });
                     }
                     Err(err) => {
-                        return Err(Error::ParseIntError {
+                        return Err(Error::ParseError {
                             source: err,
                             span: Span {
                                 start,
@@ -521,9 +521,9 @@ impl Lexer {
     }
 
     fn skip_block_comment(&mut self) -> Result<(), Error> {
-        self.position += 1;
         let start = self.position;
         let mut closed = false;
+        self.position += 2;
         while let Some(byte) = self.peek() {
             if matches!(byte, b'*') && self.peek_at(1) == Some(b'/') {
                 self.position += 2;
@@ -758,7 +758,7 @@ mod tests {
         let Err(err) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
-        assert!(matches!(err, Error::ParseIntError { .. }));
+        assert!(matches!(err, Error::ParseError { .. }));
     }
 
     #[test]

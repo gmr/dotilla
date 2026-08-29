@@ -33,7 +33,7 @@ impl Lexer {
         while let Some(byte) = self.peek() {
             let start = self.position;
 
-            // Try to handle comments
+            // Try to handle comments and += or =~ operators (two byte prefixes)
             match (byte, self.peek_at(1)) {
                 (b'/', Some(b'/')) => {
                     self.skip_line_comment();
@@ -63,22 +63,17 @@ impl Lexer {
                         },
                     });
                 }
+                (b'.', Some(b'.')) => {
+                    self.position += 2;
+                    return Ok(Token {
+                        kind: TokenKind::Punct(Punct::DotDot),
+                        span: Span {
+                            start,
+                            end: self.position,
+                        },
+                    });
+                }
                 _ => {}
-            }
-
-            // @TODO: Need to handle hexadecimal values
-            // @TODO: Need to handle octal values
-
-            // Handle dot-dot
-            if byte == b'.' && self.peek_at(1) == Some(b'.') {
-                self.position += 2;
-                return Ok(Token {
-                    kind: TokenKind::Punct(Punct::DotDot),
-                    span: Span {
-                        start,
-                        end: self.position,
-                    },
-                });
             }
 
             // Try to handle operators
@@ -111,7 +106,7 @@ impl Lexer {
             }
 
             // Handle Hex values
-            if byte == b'0' && self.peek_at(1) == Some(b'x') {
+            if byte == b'0' && matches!(self.peek_at(1), Some(b'x') | Some(b'X')) {
                 self.position += 2;
                 while let Some(value) = self.peek() {
                     if !value.is_ascii_hexdigit() {
@@ -208,9 +203,18 @@ impl Lexer {
                     }
                 }
                 if is_float {
-                    let value = self.input[start..self.position]
-                        .parse::<f64>()
-                        .unwrap_or(0.0);
+                    let value = match self.input[start..self.position].parse::<f64>() {
+                        Ok(value) => value,
+                        Err(err) => {
+                            return Err(Error::ParseFloatError {
+                                source: err,
+                                span: Span {
+                                    start,
+                                    end: self.position,
+                                },
+                            });
+                        }
+                    };
                     if !value.is_finite() {
                         return Err(Error::NumberOutOfRange {
                             span: Span {
@@ -237,8 +241,9 @@ impl Lexer {
                             },
                         });
                     }
-                    Err(_) => {
-                        return Err(Error::IntegerOverflow {
+                    Err(err) => {
+                        return Err(Error::ParseIntError {
+                            source: err,
                             span: Span {
                                 start,
                                 end: self.position,
@@ -516,6 +521,7 @@ impl Lexer {
     }
 
     fn skip_block_comment(&mut self) -> Result<(), Error> {
+        self.position += 1;
         let start = self.position;
         let mut closed = false;
         while let Some(byte) = self.peek() {
@@ -662,6 +668,7 @@ mod tests {
     fn test_lexer_case_two() {
         let mut lexer = Lexer::new(
             "MATCH (a:Person)-[:KNOWS*1..3]->(b:Person)
+             /* This is a comment that should be discarded */
              WHERE b.foo > 1e3
                AND b.bar <> .005
                AND b.baz < -5
@@ -751,7 +758,7 @@ mod tests {
         let Err(err) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
-        assert!(matches!(err, Error::IntegerOverflow { .. }));
+        assert!(matches!(err, Error::ParseIntError { .. }));
     }
 
     #[test]
@@ -822,5 +829,14 @@ mod tests {
             panic!("{:?}", lexer.lex().err());
         };
         assert!(matches!(err, Error::ParseError { .. }));
+    }
+
+    #[test]
+    fn test_lexer_case_twelve() {
+        let mut lexer = Lexer::new("RETURN RETURN 1e+".to_string());
+        let Err(err) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        assert!(matches!(err, Error::ParseFloatError { .. }));
     }
 }

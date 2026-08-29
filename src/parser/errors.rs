@@ -22,11 +22,21 @@ pub enum Error {
         source: std::num::ParseIntError,
         span: Span,
     },
+    #[error("parse float error `{source}` at {span}")]
+    ParseFloatError {
+        #[source]
+        source: std::num::ParseFloatError,
+        span: Span,
+    },
+    #[error("parse integer error `{source}` at {span}")]
+    ParseIntError {
+        #[source]
+        source: std::num::ParseIntError,
+        span: Span,
+    },
     #[error("unexpected character {byte} at {span}")]
     UnexpectedByte { byte: u8, span: Span },
     #[error("unexpected end of file")]
-    UnexpectedEof,
-    #[error("unterminated comment: {span}")]
     UnterminatedComment { span: Span },
     #[error("unterminated identifier: {span}")]
     UnterminatedIdentifier { span: Span },

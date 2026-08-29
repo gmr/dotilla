@@ -137,7 +137,7 @@ impl Lexer {
                 });
             }
 
-            // Handle Octal values
+            // Handle Octal values - intentionally not supporting legacy format (0755, etc)
             if byte == b'0' && matches!(self.peek_at(1), Some(b'o') | Some(b'O')) {
                 self.position += 2;
                 while let Some(value) = self.peek() {

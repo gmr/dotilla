@@ -1,6 +1,3 @@
-mod utils;
-
-use crate::utils::*;
 use assert_cmd::Command;
 use dotilla::http::server;
 use dotilla::state::AppState;
@@ -9,6 +6,9 @@ use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr};
 use tempfile::tempdir;
 use tokio::time::{Duration, sleep};
+
+mod common;
+use crate::common::config::*;
 
 #[test]
 fn main_exits_2_on_missing_config() {

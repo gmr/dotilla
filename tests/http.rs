@@ -1,11 +1,11 @@
-mod utils;
-
-use crate::utils::*;
 use dotilla::http::server;
 use dotilla::state::AppState;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use tokio::time::{Duration, sleep};
+
+mod common;
+use crate::common::config::*;
 
 async fn create_app_state() -> Arc<AppState> {
     let cfg = write_config_with_ephemeral_port();

@@ -35,3 +35,21 @@ pub enum Error {
     #[error("unterminated string: {span}")]
     UnterminatedString { span: Span },
 }
+
+impl Error {
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            Error::EncodingError(_) => None,
+            Error::InvalidEscape { span } => Some(*span),
+            Error::InvalidIdentifier { span } => Some(*span),
+            Error::InvalidParameter { span } => Some(*span),
+            Error::NumberOutOfRange { span } => Some(*span),
+            Error::ParseError { span, .. } => Some(*span),
+            Error::ParseFloatError { span, .. } => Some(*span),
+            Error::UnexpectedByte { span, .. } => Some(*span),
+            Error::UnterminatedComment { span } => Some(*span),
+            Error::UnterminatedIdentifier { span } => Some(*span),
+            Error::UnterminatedString { span } => Some(*span),
+        }
+    }
+}

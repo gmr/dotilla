@@ -124,8 +124,8 @@ impl Lexer {
                     match i64::from_str_radix(&self.input[start + 2..self.position], 16) {
                         Ok(v) => v,
                         Err(err) => {
-                            println!("{:?}", err);
-                            return Err(Error::IntegerOverflow {
+                            return Err(Error::ParseError {
+                                source: err,
                                 span: Span {
                                     start,
                                     end: self.position,
@@ -143,45 +143,35 @@ impl Lexer {
             }
 
             // Handle Octal values
-            if byte == b'0'
-                && self
-                    .peek_at(1)
-                    .is_some_and(|d| d.is_ascii_digit() || d == b'o')
-            {
-                let mut offset = start + 1;
-                if self.peek_at(1) == Some(b'o') {
-                    self.position += 1;
-                    offset += 1;
-                }
-                self.position += 1;
+            if byte == b'0' && matches!(self.peek_at(1), Some(b'o') | Some(b'O')) {
+                self.position += 2;
                 while let Some(value) = self.peek() {
-                    if !value.is_ascii_digit() {
+                    if matches!(value, b'0'..=b'7') {
+                        self.position += 1;
+                    } else {
                         break;
                     }
-                    self.position += 1;
                 }
-                if (self.position - offset) == 3 {
-                    let value: i64 =
-                        match i64::from_str_radix(&self.input[offset..self.position], 8) {
-                            Ok(v) => v,
-                            Err(err) => {
-                                println!("{:?}", err);
-                                return Err(Error::IntegerOverflow {
-                                    span: Span {
-                                        start,
-                                        end: self.position,
-                                    },
-                                });
-                            }
-                        };
-                    return Ok(Token {
-                        kind: TokenKind::Integer(value),
-                        span: Span {
-                            start,
-                            end: self.position,
-                        },
-                    });
-                }
+                let value: i64 = match i64::from_str_radix(&self.input[start + 2..self.position], 8)
+                {
+                    Ok(v) => v,
+                    Err(err) => {
+                        return Err(Error::ParseError {
+                            source: err,
+                            span: Span {
+                                start,
+                                end: self.position,
+                            },
+                        });
+                    }
+                };
+                return Ok(Token {
+                    kind: TokenKind::Integer(value),
+                    span: Span {
+                        start,
+                        end: self.position,
+                    },
+                });
             }
 
             // Handle numeric values
@@ -802,7 +792,7 @@ mod tests {
 
     #[test]
     fn test_lexer_case_nine() {
-        let mut lexer = Lexer::new("RETURN 0xff, 0755, 0o755".to_string());
+        let mut lexer = Lexer::new("RETURN 0xff, 0o755, 0O755".to_string());
         let Ok(tokens) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
@@ -822,15 +812,15 @@ mod tests {
         let Err(err) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
-        assert!(matches!(err, Error::IntegerOverflow { .. }));
+        assert!(matches!(err, Error::ParseError { .. }));
     }
 
     #[test]
     fn test_lexer_case_eleven() {
-        let mut lexer = Lexer::new("RETURN 0o56BC75E2D630FFFFF".to_string());
+        let mut lexer = Lexer::new("RETURN 0o2000000000000000000000".to_string());
         let Err(err) = lexer.lex() else {
             panic!("{:?}", lexer.lex().err());
         };
-        assert!(matches!(err, Error::IntegerOverflow { .. }));
+        assert!(matches!(err, Error::ParseError { .. }));
     }
 }

@@ -16,6 +16,12 @@ pub enum Error {
     IntegerOverflow { span: Span },
     #[error("number out of range: {span}")]
     NumberOutOfRange { span: Span },
+    #[error("parse error `{source}` at {span}")]
+    ParseError {
+        #[source]
+        source: std::num::ParseIntError,
+        span: Span,
+    },
     #[error("unexpected character {byte} at {span}")]
     UnexpectedByte { byte: u8, span: Span },
     #[error("unexpected end of file")]

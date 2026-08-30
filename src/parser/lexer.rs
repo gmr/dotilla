@@ -69,13 +69,7 @@ impl Lexer {
                 },
             });
         }
-        Ok(Token {
-            kind: TokenKind::Eof,
-            span: Span {
-                start: self.position,
-                end: self.position,
-            },
-        })
+        Ok(self.token(TokenKind::Eof, self.position))
     }
 
     fn escaped_string_push(&mut self, value: &mut Vec<u8>, byte: u8) {
@@ -95,30 +89,18 @@ impl Lexer {
                 Some(_) => self.position += 1,
                 None => {
                     return Err(Error::UnterminatedIdentifier {
-                        span: Span {
-                            start,
-                            end: self.position,
-                        },
+                        span: self.span(start),
                     });
                 }
             }
         }
         if (start + 1) == (self.position - 1) {
             Err(Error::InvalidIdentifier {
-                span: Span {
-                    start,
-                    end: self.position,
-                },
+                span: self.span(start),
             })
         } else {
             let name = self.input[start + 1..self.position - 1].replace("``", "`");
-            Ok(Token {
-                kind: TokenKind::Identifier(name),
-                span: Span {
-                    start,
-                    end: self.position,
-                },
-            })
+            Ok(self.token(TokenKind::Identifier(name), start))
         }
     }
 
@@ -131,19 +113,10 @@ impl Lexer {
             self.position += 1;
         }
         match u64::from_str_radix(&self.input[start + 2..self.position], 16) {
-            Ok(value) => Ok(Token {
-                kind: TokenKind::Integer(value),
-                span: Span {
-                    start,
-                    end: self.position,
-                },
-            }),
+            Ok(value) => Ok(self.token(TokenKind::Integer(value), start)),
             Err(err) => Err(Error::ParseError {
                 source: err,
-                span: Span {
-                    start,
-                    end: self.position,
-                },
+                span: self.span(start),
             }),
         }
     }
@@ -153,20 +126,11 @@ impl Lexer {
             self.position += 1;
         }
         match Keyword::from_str(&self.input[start..self.position]) {
-            Ok(value) => Ok(Token {
-                kind: TokenKind::Keyword(value),
-                span: Span {
-                    start,
-                    end: self.position,
-                },
-            }),
-            Err(_) => Ok(Token {
-                kind: TokenKind::Identifier(self.input[start..self.position].to_string()),
-                span: Span {
-                    start,
-                    end: self.position,
-                },
-            }),
+            Ok(value) => Ok(self.token(TokenKind::Keyword(value), start)),
+            Err(_) => Ok(self.token(
+                TokenKind::Identifier(self.input[start..self.position].to_string()),
+                start,
+            )),
         }
     }
 
@@ -203,41 +167,20 @@ impl Lexer {
         if is_float {
             match self.input[start..self.position].parse::<f64>() {
                 Ok(value) if !value.is_finite() => Err(Error::NumberOutOfRange {
-                    span: Span {
-                        start,
-                        end: self.position,
-                    },
+                    span: self.span(start),
                 }),
-                Ok(value) => Ok(Token {
-                    kind: TokenKind::Float(value),
-                    span: Span {
-                        start,
-                        end: self.position,
-                    },
-                }),
+                Ok(value) => Ok(self.token(TokenKind::Float(value), start)),
                 Err(err) => Err(Error::ParseFloatError {
                     source: err,
-                    span: Span {
-                        start,
-                        end: self.position,
-                    },
+                    span: self.span(start),
                 }),
             }
         } else {
             match self.input[start..self.position].parse::<u64>() {
-                Ok(value) => Ok(Token {
-                    kind: TokenKind::Integer(value),
-                    span: Span {
-                        start,
-                        end: self.position,
-                    },
-                }),
+                Ok(value) => Ok(self.token(TokenKind::Integer(value), start)),
                 Err(err) => Err(Error::ParseError {
                     source: err,
-                    span: Span {
-                        start,
-                        end: self.position,
-                    },
+                    span: self.span(start),
                 }),
             }
         }
@@ -253,19 +196,10 @@ impl Lexer {
             }
         }
         match u64::from_str_radix(&self.input[start + 2..self.position], 8) {
-            Ok(value) => Ok(Token {
-                kind: TokenKind::Integer(value),
-                span: Span {
-                    start,
-                    end: self.position,
-                },
-            }),
+            Ok(value) => Ok(self.token(TokenKind::Integer(value), start)),
             Err(err) => Err(Error::ParseError {
                 source: err,
-                span: Span {
-                    start,
-                    end: self.position,
-                },
+                span: self.span(start),
             }),
         }
     }
@@ -280,19 +214,13 @@ impl Lexer {
         }
         if (start + 1) == self.position {
             Err(Error::InvalidParameter {
-                span: Span {
-                    start,
-                    end: self.position,
-                },
+                span: self.span(start),
             })
         } else {
-            Ok(Token {
-                kind: TokenKind::Parameter(self.input[start + 1..self.position].to_string()),
-                span: Span {
-                    start,
-                    end: self.position,
-                },
-            })
+            Ok(self.token(
+                TokenKind::Parameter(self.input[start + 1..self.position].to_string()),
+                start,
+            ))
         }
     }
 
@@ -308,10 +236,7 @@ impl Lexer {
                 }
                 None => {
                     return Err(Error::UnterminatedString {
-                        span: Span {
-                            start,
-                            end: self.position,
-                        },
+                        span: self.span(start),
                     });
                 }
             };
@@ -334,39 +259,21 @@ impl Lexer {
                     Some(b'u') => {
                         self.position += 1;
                         let n = self.position;
-                        value.extend(self.hex_escape(
-                            4,
-                            Span {
-                                start: n,
-                                end: self.position,
-                            },
-                        )?);
+                        value.extend(self.hex_escape(4, self.span(n))?);
                     }
                     Some(b'U') => {
                         self.position += 1;
                         let n = self.position;
-                        value.extend(self.hex_escape(
-                            8,
-                            Span {
-                                start: n,
-                                end: self.position,
-                            },
-                        )?);
+                        value.extend(self.hex_escape(8, self.span(n))?);
                     }
                     Some(_) => {
                         return Err(Error::InvalidEscape {
-                            span: Span {
-                                start,
-                                end: self.position,
-                            },
+                            span: self.span(start),
                         });
                     }
                     None => {
                         return Err(Error::UnterminatedString {
-                            span: Span {
-                                start,
-                                end: self.position,
-                            },
+                            span: self.span(start),
                         });
                     }
                 }
@@ -376,13 +283,7 @@ impl Lexer {
                 value.push(current);
             }
         }
-        Ok(Token {
-            kind: TokenKind::String(String::from_utf8(value)?),
-            span: Span {
-                start,
-                end: self.position,
-            },
-        })
+        Ok(self.token(TokenKind::String(String::from_utf8(value)?), start))
     }
 
     fn hex_escape(&mut self, n: usize, span: Span) -> Result<Vec<u8>, Error> {
@@ -432,66 +333,30 @@ impl Lexer {
             match (byte1, byte2) {
                 (b'+', b'=') => {
                     self.position += 2;
-                    Some(Token {
-                        kind: TokenKind::Op(Op::PlusEq),
-                        span: Span {
-                            start,
-                            end: self.position,
-                        },
-                    })
+                    Some(self.token(TokenKind::Op(Op::PlusEq), start))
                 }
                 (b'=', b'~') => {
                     self.position += 2;
-                    Some(Token {
-                        kind: TokenKind::Op(Op::EqTilde),
-                        span: Span {
-                            start,
-                            end: self.position,
-                        },
-                    })
+                    Some(self.token(TokenKind::Op(Op::EqTilde), start))
                 }
                 (b'.', b'.') => {
                     self.position += 2;
-                    Some(Token {
-                        kind: TokenKind::Punct(Punct::DotDot),
-                        span: Span {
-                            start,
-                            end: self.position,
-                        },
-                    })
+                    Some(self.token(TokenKind::Punct(Punct::DotDot), start))
                 }
                 _ => {
                     if let Ok(text) = std::str::from_utf8(&[byte1, byte2])
                         && let Ok(value) = Op::from_str(text)
                     {
                         self.position += 2;
-                        Some(Token {
-                            kind: TokenKind::Op(value),
-                            span: Span {
-                                start,
-                                end: self.position,
-                            },
-                        })
+                        Some(self.token(TokenKind::Op(value), start))
                     } else if let Ok(text) = std::str::from_utf8(&[byte1])
                         && let Ok(value) = Op::from_str(text)
                     {
                         self.position += 1;
-                        Some(Token {
-                            kind: TokenKind::Op(value),
-                            span: Span {
-                                start,
-                                end: self.position,
-                            },
-                        })
+                        Some(self.token(TokenKind::Op(value), start))
                     } else if let Ok(value) = Punct::try_from(byte1) {
                         self.position += 1;
-                        Some(Token {
-                            kind: TokenKind::Punct(value),
-                            span: Span {
-                                start,
-                                end: self.position,
-                            },
-                        })
+                        Some(self.token(TokenKind::Punct(value), start))
                     } else {
                         None
                     }
@@ -526,10 +391,7 @@ impl Lexer {
         match closed {
             true => Ok(()),
             false => Err(Error::UnterminatedComment {
-                span: Span {
-                    start,
-                    end: self.position,
-                },
+                span: self.span(start),
             }),
         }
     }
@@ -540,6 +402,20 @@ impl Lexer {
                 break;
             }
             self.position += 1;
+        }
+    }
+
+    fn span(&self, start: usize) -> Span {
+        Span {
+            start,
+            end: self.position,
+        }
+    }
+
+    fn token(&self, kind: TokenKind, start: usize) -> Token {
+        Token {
+            kind,
+            span: self.span(start),
         }
     }
 }

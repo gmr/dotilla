@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn exit_code_io() {
-        let error = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, ""));
+        let error = Error::Io(std::io::Error::other(""));
         assert_eq!(error.exit_code(), 2);
     }
 
@@ -213,7 +213,7 @@ mod tests {
     fn exit_code_permission_check() {
         let error = Error::PermissionCheck {
             path: PathBuf::from("/some/path"),
-            source: std::io::Error::new(std::io::ErrorKind::Other, ""),
+            source: std::io::Error::other(""),
         };
         assert_eq!(error.exit_code(), 5);
     }

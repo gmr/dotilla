@@ -47,8 +47,8 @@ mod tests {
 
         let node = Node {
             id: 0,
-            labels: labels,
-            properties: properties,
+            labels,
+            properties,
         };
         let encoded = encode(&node).unwrap();
         let decoded: Node = decode(&encoded).unwrap();

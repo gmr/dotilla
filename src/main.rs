@@ -128,14 +128,14 @@ mod tests {
     #[test]
     fn exit_code_config() {
         let error = Error::Startup(state::StartupError::Config(config::Error::Io(
-            std::io::Error::new(std::io::ErrorKind::Other, ""),
+            std::io::Error::other(""),
         )));
         assert_eq!(error.exit_code(), 2);
     }
     #[test]
     fn exit_code_http() {
         let error = Error::HTTPServer(server::Error::ServeFailure {
-            err: std::io::Error::new(std::io::ErrorKind::Other, ""),
+            err: std::io::Error::other(""),
         });
         assert_eq!(error.exit_code(), 7);
     }

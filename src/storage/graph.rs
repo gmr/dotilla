@@ -186,7 +186,7 @@ mod tests {
         let node = Node::create(&namespace, labels, properties).await.unwrap();
 
         assert_eq!(node.labels.len(), 1);
-        assert_eq!(node.labels.iter().nth(0), Some(&foo));
+        assert_eq!(node.labels.iter().next(), Some(&foo));
         assert_eq!(
             node.properties.get("foo"),
             Some(&types::Value::String("bar".to_string()))

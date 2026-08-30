@@ -78,7 +78,10 @@ impl Error {
 mod tests {
 
     use super::*;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::{
+        net::{IpAddr, Ipv4Addr, SocketAddr},
+        panic,
+    };
     use test_context::test_context;
     use tokio::time::{Duration, sleep};
 
@@ -98,7 +101,7 @@ mod tests {
         let listener = bind_listener(addr).await;
         assert!(listener.is_ok());
         match bind_listener(addr).await {
-            Ok(_) => assert!(false),
+            Ok(_) => panic!("expected bind to fail"),
             Err(
                 ref error @ Error::ListenFailure {
                     addr: bound_addr,
@@ -109,7 +112,7 @@ mod tests {
                 assert!(err.kind() == std::io::ErrorKind::AddrInUse);
                 assert_eq!(error.exit_code(), 6);
             }
-            Err(_) => assert!(false),
+            Err(err) => panic!("incorrect error {}", err),
         }
         sleep(Duration::from_millis(500)).await;
     }
@@ -125,8 +128,8 @@ mod tests {
 
         let task = tokio::spawn(async move {
             match start_http_server(listener, state).await {
-                Ok(_) => assert!(true),
-                Err(_) => assert!(false),
+                Ok(_) => (),
+                Err(err) => panic!("expected success: {}", err),
             }
         });
         sleep(Duration::from_millis(500)).await;
@@ -143,8 +146,8 @@ mod tests {
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let addr = SocketAddr::new(ip_addr, 65535);
         let error = Error::ListenFailure {
-            addr: addr,
-            err: std::io::Error::new(std::io::ErrorKind::Other, ""),
+            addr,
+            err: std::io::Error::other(""),
         };
         assert_eq!(error.exit_code(), 6);
     }
@@ -152,7 +155,7 @@ mod tests {
     #[test]
     fn exit_code_serve_failure() {
         let error = Error::ServeFailure {
-            err: std::io::Error::new(std::io::ErrorKind::Other, ""),
+            err: std::io::Error::other(""),
         };
         assert_eq!(error.exit_code(), 7);
     }

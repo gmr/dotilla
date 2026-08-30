@@ -10,9 +10,9 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy -- -D warnings
+        entry: cargo clippy --all-targets --all-features -- -D warnings
         language: system
-        types: [rust]
+        files: '(^|/)(.*\.rs|Cargo\.toml|Cargo\.lock|clippy\.toml|rust-toolchain\.toml)$'
         pass_filenames: false
 
       - id: cargo-test

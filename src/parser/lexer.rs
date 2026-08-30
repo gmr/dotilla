@@ -329,42 +329,29 @@ impl Lexer {
     }
 
     fn maybe_handle_operator_or_punct(&mut self, byte1: u8, start: usize) -> Option<Token> {
-        if let Some(byte2) = self.peek_at(1) {
-            match (byte1, byte2) {
-                (b'+', b'=') => {
-                    self.position += 2;
-                    Some(self.token(TokenKind::Op(Op::PlusEq), start))
-                }
-                (b'=', b'~') => {
-                    self.position += 2;
-                    Some(self.token(TokenKind::Op(Op::EqTilde), start))
-                }
-                (b'.', b'.') => {
-                    self.position += 2;
-                    Some(self.token(TokenKind::Punct(Punct::DotDot), start))
-                }
-                _ => {
-                    if let Ok(text) = std::str::from_utf8(&[byte1, byte2])
-                        && let Ok(value) = Op::from_str(text)
-                    {
-                        self.position += 2;
-                        Some(self.token(TokenKind::Op(value), start))
-                    } else if let Ok(text) = std::str::from_utf8(&[byte1])
-                        && let Ok(value) = Op::from_str(text)
-                    {
-                        self.position += 1;
-                        Some(self.token(TokenKind::Op(value), start))
-                    } else if let Ok(value) = Punct::try_from(byte1) {
-                        self.position += 1;
-                        Some(self.token(TokenKind::Punct(value), start))
-                    } else {
-                        None
-                    }
-                }
+        if let Some(byte2) = self.peek_at(1)
+            && let Ok(text) = std::str::from_utf8(&[byte1, byte2])
+        {
+            if let Ok(value) = Op::from_str(text) {
+                self.position += 2;
+                return Some(self.token(TokenKind::Op(value), start));
             }
-        } else {
-            None
+            if let Ok(value) = Punct::from_str(text) {
+                self.position += 2;
+                return Some(self.token(TokenKind::Punct(value), start));
+            }
         }
+        if let Ok(text) = std::str::from_utf8(&[byte1]) {
+            if let Ok(value) = Op::from_str(text) {
+                self.position += 1;
+                return Some(self.token(TokenKind::Op(value), start));
+            }
+            if let Ok(value) = Punct::from_str(text) {
+                self.position += 1;
+                return Some(self.token(TokenKind::Punct(value), start));
+            }
+        }
+        None
     }
 
     fn peek(&self) -> Option<u8> {
@@ -425,7 +412,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lexer_case_one() {
+    fn case_one() {
         let lexer = Lexer::new(
             "MATCH (p:Person {age: 30, gender: $gender, income > 123.45})-[a:Attends]->(s:School)
                 WHERE p.fname = \"Ralph\"
@@ -532,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_two() {
+    fn case_two() {
         let lexer = Lexer::new(
             "MATCH (a:Person)-[:KNOWS*1..3]->(b:Person)
              /* This is a comment that should be discarded */
@@ -608,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_three() {
+    fn case_three() {
         let lexer = Lexer::new("RETURN \"café\"".to_string());
         let Ok(tokens) = lexer.lex() else {
             panic!("expected an error");
@@ -620,7 +607,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_four() {
+    fn case_four() {
         let lexer = Lexer::new("RETURN 99999999999999999999".to_string());
         let Err(err) = lexer.lex() else {
             panic!("expected an error");
@@ -629,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_five() {
+    fn case_five() {
         let lexer = Lexer::new("RETURN 1e400".to_string());
         let Err(err) = lexer.lex() else {
             panic!("expected an error");
@@ -638,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_six() {
+    fn case_six() {
         let lexer = Lexer::new("RETURN $ + 1".to_string());
         let Err(err) = lexer.lex() else {
             panic!("expected an error");
@@ -647,7 +634,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_seven() {
+    fn case_seven() {
         let lexer = Lexer::new("RETURN `` AS c".to_string());
         let Err(err) = lexer.lex() else {
             panic!("expected an error");
@@ -656,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_eight() {
+    fn case_eight() {
         let lexer = Lexer::new("RETURN /* start of unfinished comment".to_string());
         let Err(err) = lexer.lex() else {
             panic!("expected an error");
@@ -665,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_nine() {
+    fn case_nine() {
         let lexer = Lexer::new("RETURN 0xff, 0o755, 0O755".to_string());
         let Ok(tokens) = lexer.lex() else {
             panic!("expected an error");
@@ -681,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_ten() {
+    fn case_ten() {
         let lexer = Lexer::new("RETURN 0x56BC75E2D630FFFFF".to_string());
         let Err(err) = lexer.lex() else {
             panic!("expected an error");
@@ -690,7 +677,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_eleven() {
+    fn case_eleven() {
         let lexer = Lexer::new("RETURN 0o2000000000000000000000".to_string());
         let Err(err) = lexer.lex() else {
             panic!("expected an error");
@@ -699,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn test_lexer_case_twelve() {
+    fn case_twelve() {
         let lexer = Lexer::new("RETURN 1e+".to_string());
         let Err(err) = lexer.lex() else {
             panic!("expected an error");
@@ -708,5 +695,42 @@ mod tests {
             panic!("wrong error: {err:?}");
         };
         assert_eq!(span, Span { start: 7, end: 10 });
+    }
+
+    #[test]
+    fn case_thirteen() {
+        let lexer = Lexer::new("MATCH (n:Person) RETURN count(n)".to_string());
+        let Ok(tokens) = lexer.lex() else {
+            panic!("unexpected error");
+        };
+        assert_eq!(tokens.len(), 12);
+        assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
+        assert_eq!(tokens[1].kind, TokenKind::Punct(Punct::LParen));
+        assert_eq!(tokens[2].kind, TokenKind::Identifier("n".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::Punct(Punct::Colon));
+        assert_eq!(tokens[4].kind, TokenKind::Identifier("Person".to_string()));
+        assert_eq!(tokens[5].kind, TokenKind::Punct(Punct::RParen));
+        assert_eq!(tokens[6].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[7].kind, TokenKind::Identifier("count".to_string()));
+        assert_eq!(tokens[8].kind, TokenKind::Punct(Punct::LParen));
+        assert_eq!(tokens[9].kind, TokenKind::Identifier("n".to_string()));
+        assert_eq!(tokens[10].kind, TokenKind::Punct(Punct::RParen));
+        assert_eq!(tokens[11].kind, TokenKind::Eof);
+    }
+
+    #[test]
+    fn case_fourteen() {
+        let lexer = Lexer::new("MATCH (n) RETURN *".to_string());
+        let Ok(tokens) = lexer.lex() else {
+            panic!("unexpected error");
+        };
+        assert_eq!(tokens.len(), 7);
+        assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
+        assert_eq!(tokens[1].kind, TokenKind::Punct(Punct::LParen));
+        assert_eq!(tokens[2].kind, TokenKind::Identifier("n".to_string()));
+        assert_eq!(tokens[3].kind, TokenKind::Punct(Punct::RParen));
+        assert_eq!(tokens[4].kind, TokenKind::Keyword(Keyword::Return));
+        assert_eq!(tokens[5].kind, TokenKind::Op(Op::Star));
+        assert_eq!(tokens[6].kind, TokenKind::Eof);
     }
 }

@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use super::token::Span;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Debug, Error, PartialEq)]
 pub enum Error {
     #[error("encoding error: {0}")]
     EncodingError(#[from] std::string::FromUtf8Error),

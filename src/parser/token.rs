@@ -1,5 +1,5 @@
-// Cypher 9 Grammar Tokens
-use strum::{Display, EnumString};
+// OpenCypher 9 Tokens
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
@@ -18,19 +18,19 @@ impl Token {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
 }
 
-impl std::fmt::Display for Span {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(_f, "{}..{}", self.start, self.end)
+impl fmt::Display for Span {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}..{}", self.start, self.end)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Display)]
+#[derive(Clone, Debug, PartialEq, strum::Display)]
 pub enum TokenKind {
     Keyword(Keyword),
     Identifier(String),
@@ -43,7 +43,7 @@ pub enum TokenKind {
     Eof,
 }
 
-#[derive(Debug, Clone, PartialEq, EnumString, Display)]
+#[derive(Clone, Debug, PartialEq, strum::Display, strum::EnumString)]
 #[strum(ascii_case_insensitive)]
 pub enum Keyword {
     All,
@@ -99,7 +99,7 @@ pub enum Keyword {
     Yield,
 }
 
-#[derive(Debug, Clone, PartialEq, Display, EnumString)]
+#[derive(Clone, Debug, PartialEq, strum::Display, strum::EnumString)]
 pub enum Op {
     #[strum(serialize = "=")]
     Eq,
@@ -131,40 +131,49 @@ pub enum Op {
     EqTilde,
 }
 
-#[derive(Debug, Clone, PartialEq, Display)]
+#[derive(Clone, Debug, PartialEq, strum::EnumString)]
 pub enum Punct {
-    LParen,   // (
-    RParen,   // )
-    LBrace,   // {
-    RBrace,   // }
-    LBracket, // [
-    RBracket, // ]
-    Comma,    // ,
-    Colon,    // :
-    Dot,      // .
-    DotDot,   // ..
-    Semi,     // ;
-    Pipe,     // |
+    #[strum(serialize = "(")]
+    LParen,
+    #[strum(serialize = ")")]
+    RParen,
+    #[strum(serialize = "{")]
+    LBrace,
+    #[strum(serialize = "}")]
+    RBrace,
+    #[strum(serialize = "[")]
+    LBracket,
+    #[strum(serialize = "]")]
+    RBracket,
+    #[strum(serialize = ",")]
+    Comma,
+    #[strum(serialize = ":")]
+    Colon,
+    #[strum(serialize = ".")]
+    Dot,
+    #[strum(serialize = "..")]
+    DotDot,
+    #[strum(serialize = ";")]
+    Semi,
+    #[strum(serialize = "|")]
+    Pipe,
 }
 
-// Implement TryFrom to cleanly map a single byte to your enum
-impl TryFrom<u8> for Punct {
-    type Error = ();
-
-    fn try_from(byte: u8) -> Result<Self, Self::Error> {
-        match byte {
-            b'(' => Ok(Punct::LParen),
-            b')' => Ok(Punct::RParen),
-            b'{' => Ok(Punct::LBrace),
-            b'}' => Ok(Punct::RBrace),
-            b'[' => Ok(Punct::LBracket),
-            b']' => Ok(Punct::RBracket),
-            b',' => Ok(Punct::Comma),
-            b':' => Ok(Punct::Colon),
-            b'.' => Ok(Punct::Dot),
-            b';' => Ok(Punct::Semi),
-            b'|' => Ok(Punct::Pipe),
-            _ => Err(()),
-        }
+impl fmt::Display for Punct {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Punct::LParen => "(",
+            Punct::RParen => ")",
+            Punct::LBrace => "{",
+            Punct::RBrace => "}",
+            Punct::LBracket => "[",
+            Punct::RBracket => "]",
+            Punct::Comma => ",",
+            Punct::Colon => ":",
+            Punct::Dot => ".",
+            Punct::DotDot => "..",
+            Punct::Semi => ";",
+            Punct::Pipe => "|",
+        })
     }
 }

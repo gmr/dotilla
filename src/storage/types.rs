@@ -15,7 +15,7 @@ macro_rules! validated_string {
         validated_string!($name, $label, 63, |$c, $first| $rule);
     };
     ($name:ident, $label:literal, $max:literal, |$c:ident, $first:ident| $rule:expr) => {
-        #[derive(Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+        #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
         #[serde(try_from = "String", into = "String")]
         pub struct $name(pub String);
 
@@ -275,7 +275,7 @@ validated_string!(NamespaceName, "namespace name", 256, |c, _first| {
     c.is_ascii_alphanumeric() || c == '_' || c == '-'
 });
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, AvroSchema)]
+#[derive(AvroSchema, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[avro(namespace = "org.dotilla")]
 pub enum Value {
     Bool(bool),
@@ -394,7 +394,7 @@ impl avro::CachedSchema for Value {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct Table(HashMap<String, Value>);
 
@@ -446,7 +446,7 @@ impl Default for Table {
     }
 }
 
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ValueError {
     Chars {
         kind: &'static str,
@@ -463,19 +463,20 @@ pub enum ValueError {
 }
 
 impl Display for ValueError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
             Self::Chars { kind, .. } => {
                 let kind = kind.to_case(Case::Title);
-                write!(f, "{kind} has unsupported characters")
+                &format!("{kind} has unsupported characters")
             }
             Self::TooLong { kind, len, max } => {
-                write!(f, "{kind} is {len} bytes, exceeds max of {max}")
+                &format!("{kind} is {len} bytes, exceeds max of {max}")
             }
             Self::Empty { kind } => {
                 let kind = kind.to_case(Case::Title);
-                write!(f, "{kind} must not be empty")
+                &format!("{kind} must not be empty")
             }
-        }
+        };
+        formatter.write_str(value)
     }
 }

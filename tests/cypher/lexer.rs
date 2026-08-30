@@ -1,10 +1,9 @@
-use dotilla::parser::{lexer, token};
+use dotilla::cypher::{lexer, token};
 
-mod common;
-use crate::common::opencypher;
+use crate::cypher::opencypher;
 
 #[test]
-fn test_opencypher_tck_files() {
+fn opencypher_tck_files() {
     for feature_query in opencypher::FeatureQueries::iter().unwrap() {
         match lexer::lex(&feature_query.query) {
             Ok(lexed) => {

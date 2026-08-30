@@ -4,7 +4,6 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use tokio::time::{Duration, sleep};
 
-mod common;
 use crate::common::config::*;
 
 async fn create_app_state() -> Arc<AppState> {
@@ -13,7 +12,7 @@ async fn create_app_state() -> Arc<AppState> {
 }
 
 #[tokio::test]
-async fn test_serve_ok() {
+async fn serve_ok() {
     let app_state = create_app_state().await;
     let port = get_ephemeral_port();
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
@@ -28,7 +27,7 @@ async fn test_serve_ok() {
 }
 
 #[tokio::test]
-async fn test_serve_error() {
+async fn serve_error() {
     let app_state_one = create_app_state().await;
     let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let port = get_ephemeral_port();

@@ -7,7 +7,6 @@ use std::net::{IpAddr, Ipv4Addr};
 use tempfile::tempdir;
 use tokio::time::{Duration, sleep};
 
-mod common;
 use crate::common::config::*;
 
 #[test]

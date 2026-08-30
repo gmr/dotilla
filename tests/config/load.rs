@@ -3,7 +3,7 @@ use std::io::Write;
 use tempfile::tempdir;
 
 #[test]
-fn test_load_ok() {
+fn load_ok() {
     let tmp_dir = tempdir().expect("failed to create temp dir");
     let config_path = tmp_dir.path().join("config.toml");
     let mut file = std::fs::File::create(&config_path).expect("failed to create config file");
@@ -15,7 +15,7 @@ fn test_load_ok() {
 }
 
 #[test]
-fn test_load_err() {
+fn load_err() {
     let tmp_dir = tempdir().expect("failed to create temp dir");
     let config_path = tmp_dir.path().join("config.toml");
     match load(&config_path) {

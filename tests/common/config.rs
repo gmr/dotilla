@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use dotilla::config;
 use std::io::Write;
 use std::path::PathBuf;

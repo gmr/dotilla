@@ -34,7 +34,7 @@ impl std::fmt::Display for Span {
 pub enum TokenKind {
     Keyword(Keyword),
     Identifier(String),
-    Integer(i64),
+    Integer(u64),
     Float(f64),
     String(String),
     Parameter(String),

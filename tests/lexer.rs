@@ -4,7 +4,7 @@ mod common;
 use crate::common::opencypher;
 
 #[test]
-fn test_gather_files() {
+fn test_opencypher_tck_files() {
     for feature_query in opencypher::FeatureQueries::iter().unwrap() {
         match lexer::lex(&feature_query.query) {
             Ok(lexed) => {

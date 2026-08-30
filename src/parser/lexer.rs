@@ -130,7 +130,7 @@ impl Lexer {
             }
             self.position += 1;
         }
-        match i64::from_str_radix(&self.input[start + 2..self.position], 16) {
+        match u64::from_str_radix(&self.input[start + 2..self.position], 16) {
             Ok(value) => Ok(Token {
                 kind: TokenKind::Integer(value),
                 span: Span {
@@ -224,7 +224,7 @@ impl Lexer {
                 }),
             }
         } else {
-            match self.input[start..self.position].parse::<i64>() {
+            match self.input[start..self.position].parse::<u64>() {
                 Ok(value) => Ok(Token {
                     kind: TokenKind::Integer(value),
                     span: Span {
@@ -252,7 +252,7 @@ impl Lexer {
                 break;
             }
         }
-        match i64::from_str_radix(&self.input[start + 2..self.position], 8) {
+        match u64::from_str_radix(&self.input[start + 2..self.position], 8) {
             Ok(value) => Ok(Token {
                 kind: TokenKind::Integer(value),
                 span: Span {

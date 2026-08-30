@@ -7,6 +7,17 @@ pub struct Token {
     pub span: Span,
 }
 
+impl Token {
+    pub fn display(&self) -> String {
+        format!(
+            "<{kind}> start: {start}, end: {end}",
+            kind = self.kind,
+            start = self.span.start,
+            end = self.span.end
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Span {
     pub start: usize,
@@ -19,7 +30,7 @@ impl std::fmt::Display for Span {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Display)]
 pub enum TokenKind {
     Keyword(Keyword),
     Identifier(String),
@@ -32,7 +43,7 @@ pub enum TokenKind {
     Eof,
 }
 
-#[derive(Debug, Clone, PartialEq, EnumString)]
+#[derive(Debug, Clone, PartialEq, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 pub enum Keyword {
     All,

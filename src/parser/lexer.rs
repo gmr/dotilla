@@ -20,7 +20,7 @@ impl Lexer {
         }
     }
 
-    pub fn lex(&mut self) -> Result<Vec<Token>, Error> {
+    pub fn lex(mut self) -> Result<Vec<Token>, Error> {
         let mut tokens = Vec::new();
         loop {
             let token = self.next_token()?;
@@ -30,7 +30,6 @@ impl Lexer {
             }
             tokens.push(token);
         }
-        self.position = 0;
         Ok(tokens)
     }
 
@@ -551,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_lexer_case_one() {
-        let mut lexer = Lexer::new(
+        let lexer = Lexer::new(
             "MATCH (p:Person {age: 30, gender: $gender, income > 123.45})-[a:Attends]->(s:School)
                 WHERE p.fname = \"Ralph\"
                   AND p.mname = \"\\\"Ralphie\\\"\"
@@ -562,7 +561,7 @@ mod tests {
                 .to_string(),
         );
         let Ok(tokens) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         assert_eq!(tokens.len(), 80);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
@@ -658,7 +657,7 @@ mod tests {
 
     #[test]
     fn test_lexer_case_two() {
-        let mut lexer = Lexer::new(
+        let lexer = Lexer::new(
             "MATCH (a:Person)-[:KNOWS*1..3]->(b:Person)
              /* This is a comment that should be discarded */
              WHERE b.foo > 1e3
@@ -669,7 +668,7 @@ mod tests {
                 .to_string(),
         );
         let Ok(tokens) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         //assert_eq!(tokens.len(), 58);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Match));
@@ -734,71 +733,66 @@ mod tests {
 
     #[test]
     fn test_lexer_case_three() {
-        let mut lexer = Lexer::new("RETURN \"café\"".to_string());
+        let lexer = Lexer::new("RETURN \"café\"".to_string());
         let Ok(tokens) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         assert_eq!(tokens.len(), 3);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Return));
         assert_eq!(tokens[1].kind, TokenKind::String("café".to_string()));
         assert_eq!(tokens[2].kind, TokenKind::Eof);
-
-        let Ok(tokens) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
-        };
-        assert_eq!(tokens.len(), 3);
     }
 
     #[test]
     fn test_lexer_case_four() {
-        let mut lexer = Lexer::new("RETURN 99999999999999999999".to_string());
+        let lexer = Lexer::new("RETURN 99999999999999999999".to_string());
         let Err(err) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         assert!(matches!(err, Error::ParseError { .. }));
     }
 
     #[test]
     fn test_lexer_case_five() {
-        let mut lexer = Lexer::new("RETURN 1e400".to_string());
+        let lexer = Lexer::new("RETURN 1e400".to_string());
         let Err(err) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         assert!(matches!(err, Error::NumberOutOfRange { .. }));
     }
 
     #[test]
     fn test_lexer_case_six() {
-        let mut lexer = Lexer::new("RETURN $ + 1".to_string());
+        let lexer = Lexer::new("RETURN $ + 1".to_string());
         let Err(err) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         assert!(matches!(err, Error::InvalidParameter { .. }));
     }
 
     #[test]
     fn test_lexer_case_seven() {
-        let mut lexer = Lexer::new("RETURN `` AS c".to_string());
+        let lexer = Lexer::new("RETURN `` AS c".to_string());
         let Err(err) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         assert!(matches!(err, Error::InvalidIdentifier { .. }));
     }
 
     #[test]
     fn test_lexer_case_eight() {
-        let mut lexer = Lexer::new("RETURN /* start of unfinished comment".to_string());
+        let lexer = Lexer::new("RETURN /* start of unfinished comment".to_string());
         let Err(err) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         assert!(matches!(err, Error::UnterminatedComment { .. }));
     }
 
     #[test]
     fn test_lexer_case_nine() {
-        let mut lexer = Lexer::new("RETURN 0xff, 0o755, 0O755".to_string());
+        let lexer = Lexer::new("RETURN 0xff, 0o755, 0O755".to_string());
         let Ok(tokens) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         assert_eq!(tokens.len(), 7);
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Return));
@@ -812,27 +806,27 @@ mod tests {
 
     #[test]
     fn test_lexer_case_ten() {
-        let mut lexer = Lexer::new("RETURN 0x56BC75E2D630FFFFF".to_string());
+        let lexer = Lexer::new("RETURN 0x56BC75E2D630FFFFF".to_string());
         let Err(err) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         assert!(matches!(err, Error::ParseError { .. }));
     }
 
     #[test]
     fn test_lexer_case_eleven() {
-        let mut lexer = Lexer::new("RETURN 0o2000000000000000000000".to_string());
+        let lexer = Lexer::new("RETURN 0o2000000000000000000000".to_string());
         let Err(err) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         assert!(matches!(err, Error::ParseError { .. }));
     }
 
     #[test]
     fn test_lexer_case_twelve() {
-        let mut lexer = Lexer::new("RETURN 1e+".to_string());
+        let lexer = Lexer::new("RETURN 1e+".to_string());
         let Err(err) = lexer.lex() else {
-            panic!("{:?}", lexer.lex().err());
+            panic!("expected an error");
         };
         let Error::ParseFloatError { span, .. } = err else {
             panic!("wrong error: {err:?}");

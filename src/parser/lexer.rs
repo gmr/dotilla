@@ -30,6 +30,7 @@ impl Lexer {
             }
             tokens.push(token);
         }
+        self.position = 0;
         Ok(tokens)
     }
 
@@ -741,6 +742,11 @@ mod tests {
         assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Return));
         assert_eq!(tokens[1].kind, TokenKind::String("café".to_string()));
         assert_eq!(tokens[2].kind, TokenKind::Eof);
+
+        let Ok(tokens) = lexer.lex() else {
+            panic!("{:?}", lexer.lex().err());
+        };
+        assert_eq!(tokens.len(), 3);
     }
 
     #[test]

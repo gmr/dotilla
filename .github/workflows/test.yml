@@ -18,6 +18,8 @@ jobs:
         with:
           submodules: recursive
       - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Clippy Checks
+        run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Build
         run: cargo build --verbose
       - name: Run tests

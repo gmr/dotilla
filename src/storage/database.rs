@@ -1,5 +1,5 @@
+use compio::runtime::spawn_blocking;
 use thiserror::Error;
-use tokio::task::spawn_blocking;
 
 use super::keyspace::Keyspace;
 use super::{batch, errors};
@@ -7,7 +7,6 @@ use super::{batch, errors};
 pub struct Database {
     pub handle: fjall::Database,
     /// taken only at the top of create/delete, never in helpers they call — not reentrant
-    pub namespace_lock: tokio::sync::Mutex<()>,
     pub system: Keyspace,
     pub default_locale: String,
 }
@@ -19,7 +18,6 @@ impl Database {
         let system = db.keyspace("system", fjall::KeyspaceCreateOptions::default)?;
         Ok(Self {
             handle: db,
-            namespace_lock: tokio::sync::Mutex::new(()),
             system: Keyspace { handle: system },
             default_locale: config.default_locale.clone(),
         })
@@ -69,8 +67,8 @@ impl Error {
     /// Map the error to an exit code.
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::Internal { .. } => 11,
-            Error::System => 10,
+            Error::Internal { .. } => 10,
+            Error::System => 11,
         }
     }
 }

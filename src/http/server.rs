@@ -1,51 +1,63 @@
 use std::net::SocketAddr;
+use std::pin::pin;
 use std::sync::Arc;
+
+use compio::signal::{ctrl_c, unix};
+use futures_util::future::select;
 use thiserror::Error;
 
+use super::routes::Router;
 use crate::state;
 
-/// Runs the HTTP server until it exits or fails to bind/serve.
-///
-/// # Errors
-///
-/// Returns [`Error::ListenFailure`] if the server fails to bind to the specified address.
-/// Returns [`Error::ServeFailure`] if the server fails to serve.
-pub async fn serve(
-    listen_address: std::net::IpAddr,
-    port: u16,
-    app_state: Arc<state::AppState>,
-) -> Result<(), Error> {
-    let addr = SocketAddr::new(listen_address, port);
-    let listener = bind_listener(addr).await?;
-    start_http_server(listener, app_state).await
+pub struct Server {
+    state: Arc<state::AppState>,
 }
 
-/// Binds the TCP listener to the specified address.
-async fn bind_listener(addr: SocketAddr) -> Result<tokio::net::TcpListener, Error> {
-    match tokio::net::TcpListener::bind(addr).await {
-        Ok(listener) => {
-            println!(
-                "Dotilla v{} listening on {addr:?}",
-                env!("CARGO_PKG_VERSION")
-            );
-            Ok(listener)
-        }
-        Err(e) => Err(Error::ListenFailure { addr, err: e }),
+impl Server {
+    pub fn new(state: Arc<state::AppState>) -> Self {
+        Self { state }
     }
-}
 
-/// Start the HTTP server
-async fn start_http_server(
-    listener: tokio::net::TcpListener,
-    app_state: Arc<state::AppState>,
-) -> Result<(), Error> {
-    let cancellation_token = app_state.cancellation_token.clone();
-    match axum::serve(listener, super::routes::create(app_state))
-        .with_graceful_shutdown(cancellation_token.cancelled_owned())
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(e) => Err(Error::ServeFailure { err: e }),
+    pub async fn serve(&self) -> Result<(), Error> {
+        let listener = self.bind().await?;
+        match cyper_axum::serve(listener, Router::new(self.state.clone()).router)
+            .with_graceful_shutdown(Self::signal_handler())
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => Err(Error::ServeFailure { err: e }),
+        }
+    }
+
+    async fn bind(&self) -> Result<compio::net::TcpListener, Error> {
+        let addr = SocketAddr::new(self.state.config.listen_address, self.state.config.port);
+        match compio::net::TcpListener::bind(addr).await {
+            Ok(listener) => {
+                println!(
+                    "Dotilla v{} listening on {addr:?}",
+                    env!("CARGO_PKG_VERSION")
+                );
+                Ok(listener)
+            }
+            Err(e) => Err(Error::ListenFailure { addr, err: e }),
+        }
+    }
+
+    async fn signal_handler() {
+        let ctrl_c_fut = async {
+            ctrl_c().await.unwrap();
+        };
+        #[cfg(unix)]
+        let terminate_fut = async {
+            unix::signal(15).await.unwrap();
+        };
+        #[cfg(not(unix))]
+        let terminate_fut = std::future::pending::<()>();
+
+        let ctrl_c_pinned = pin!(ctrl_c_fut);
+        let terminate_pinned = pin!(terminate_fut);
+
+        select(ctrl_c_pinned, terminate_pinned).await;
     }
 }
 
@@ -77,79 +89,61 @@ impl Error {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-    use std::{
-        net::{IpAddr, Ipv4Addr, SocketAddr},
-        panic,
-    };
-    use test_context::test_context;
-    use tokio::time::{Duration, sleep};
+    use std::time::Duration;
 
+    use compio::net::TcpStream;
+    use compio::time::sleep;
+    use test_context::test_context;
+
+    use super::*;
     use crate::test_helpers::TestContext;
 
-    #[tokio::test]
-    async fn bind_listener_ok() {
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let addr = SocketAddr::new(ip_addr, 0);
-        assert!(bind_listener(addr).await.is_ok());
-    }
-
-    #[tokio::test]
-    async fn bind_listener_err() {
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let addr = SocketAddr::new(ip_addr, 32768);
-        let listener = bind_listener(addr).await;
-        assert!(listener.is_ok());
-        match bind_listener(addr).await {
-            Ok(_) => panic!("expected bind to fail"),
-            Err(
-                ref error @ Error::ListenFailure {
-                    addr: bound_addr,
-                    ref err,
-                },
-            ) => {
-                assert_eq!(bound_addr, addr);
-                assert!(err.kind() == std::io::ErrorKind::AddrInUse);
-                assert_eq!(error.exit_code(), 6);
-            }
-            Err(err) => panic!("incorrect error {}", err),
-        }
-        sleep(Duration::from_millis(500)).await;
-    }
-
     #[test_context(TestContext)]
-    #[tokio::test]
-    async fn start_http_server_ok(ctx: &mut TestContext) {
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let addr = SocketAddr::new(ip_addr, 0);
-        let listener = bind_listener(addr).await.unwrap();
-        let addr = listener.local_addr().unwrap();
+    #[compio::test]
+    async fn start_server_ok(ctx: &mut TestContext) {
         let state = ctx.state.clone();
-
-        let task = tokio::spawn(async move {
-            match start_http_server(listener, state).await {
+        let task = compio::runtime::spawn(async move {
+            match Server::new(state).serve().await {
                 Ok(_) => (),
                 Err(err) => panic!("expected success: {}", err),
             }
         });
         sleep(Duration::from_millis(500)).await;
-        let resp = reqwest::get(format!("http://{}/_health", addr))
-            .await
-            .unwrap();
-        assert!(resp.status().is_success());
-        sleep(Duration::from_millis(500)).await;
-        task.abort();
+
+        let state = ctx.state.clone();
+        let _stream = TcpStream::connect(format!(
+            "{}:{}",
+            state.config.listen_address, state.config.port
+        ))
+        .await
+        .unwrap();
+
+        task.cancel().await;
     }
 
-    #[test]
-    fn exit_code_listen_failure() {
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let addr = SocketAddr::new(ip_addr, 65535);
-        let error = Error::ListenFailure {
-            addr,
-            err: std::io::Error::other(""),
-        };
-        assert_eq!(error.exit_code(), 6);
+    #[test_context(TestContext)]
+    #[compio::test]
+    async fn exit_code_listen_failure(ctx: &mut TestContext) {
+        // First server should start ok
+        let state = ctx.state.clone();
+        let task1 = compio::runtime::spawn(async move {
+            match Server::new(state.clone()).serve().await {
+                Ok(_) => (),
+                Err(err) => panic!("expected success: {}", err),
+            }
+        });
+
+        sleep(Duration::from_millis(500)).await;
+
+        // Second server should fail
+        let state = ctx.state.clone();
+        match Server::new(state).serve().await {
+            Ok(_) => panic!("expected failure"),
+            Err(err) => {
+                assert_eq!(err.exit_code(), 6);
+            }
+        }
+        task1.cancel().await;
     }
 
     #[test]

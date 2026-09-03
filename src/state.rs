@@ -4,16 +4,12 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use thiserror::Error;
-use tokio_util::sync::CancellationToken;
 
 use crate::config;
 use crate::storage::{database, errors, namespace};
 
 /// Used to carry the runtime state of the app across modules and requests
 pub struct AppState {
-    /// Used when the app is shutting down to cancel pending tasks
-    pub cancellation_token: CancellationToken,
-
     /// Application Configuration
     pub config: crate::config::Config,
 
@@ -33,7 +29,6 @@ impl AppState {
         let db = Arc::new(database::Database::initialize(&config).await?);
         let namespaces = namespace::load_all(&db).await?;
         Ok(Arc::new(Self {
-            cancellation_token: CancellationToken::new(),
             config: config.clone(),
             // parser: parser::Parser::new(),
             database: db,

@@ -1,6 +1,6 @@
 use apache_avro::AvroSchema;
+use compio::runtime::spawn_blocking;
 use serde::Serialize;
-use tokio::task::spawn_blocking;
 
 use super::{avro, errors, keyspace};
 

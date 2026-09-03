@@ -11,7 +11,7 @@ pub async fn info(State(state): State<Arc<state::AppState>>) -> impl IntoRespons
     let keyspace_count_future = state.database.keyspace_count();
     let size_on_disk_future = state.database.size_on_disk();
     let write_buffer_size_future = state.database.write_buffer_size();
-    match tokio::try_join!(
+    match futures::try_join!(
         journal_count_future,
         keyspace_count_future,
         size_on_disk_future,

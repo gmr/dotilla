@@ -1,8 +1,8 @@
 use super::errors;
 use apache_avro::AvroSchema;
+use compio::runtime::spawn_blocking;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use tokio::task::spawn_blocking;
 
 use super::{avro, database};
 
@@ -63,7 +63,7 @@ impl Keyspace {
         let size_on_disk_future = self.size_on_disk();
         let wasted_space_future = self.wasted_space();
         let (item_count, size_on_disk, wasted_space) =
-            tokio::try_join!(item_count_future, size_on_disk_future, wasted_space_future)?;
+            futures::try_join!(item_count_future, size_on_disk_future, wasted_space_future)?;
         Ok(Details {
             item_count,
             size_on_disk,
@@ -175,7 +175,7 @@ impl Keyspaces {
     /// Opens a new keyspaces instance with the given name.
     pub async fn open(db: &database::Database, name: &str) -> Result<Self, errors::Error> {
         let names = Names::new(name);
-        let (system, nodes, edges, labels, vectors) = tokio::try_join!(
+        let (system, nodes, edges, labels, vectors) = futures::try_join!(
             Keyspace::open(db, &names.system),
             Keyspace::open(db, &names.nodes),
             Keyspace::open(db, &names.edges),
@@ -193,7 +193,7 @@ impl Keyspaces {
 
     /// Deletes all keyspaces.
     pub async fn delete(&self, db: &database::Database) -> Result<(), errors::Error> {
-        let _ = tokio::try_join!(
+        let _ = futures::try_join!(
             self.system.delete(db),
             self.nodes.delete(db),
             self.edges.delete(db),
@@ -210,7 +210,7 @@ impl Keyspaces {
         let edges_future = self.edges.details();
         let labels_future = self.labels.details();
         let vectors_future = self.vectors.details();
-        let (system, nodes, edges, labels, vectors) = tokio::try_join!(
+        let (system, nodes, edges, labels, vectors) = futures::try_join!(
             system_future,
             nodes_future,
             edges_future,

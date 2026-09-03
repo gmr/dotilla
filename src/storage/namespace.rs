@@ -101,7 +101,6 @@ impl Namespace {
         collation_strength: Option<CollationStrength>,
     ) -> Result<Self, errors::Error> {
         let namespace_name = Name::try_from(name.to_string())?;
-        let _guard = database.namespace_lock.lock().await;
         match Config::load(database, name).await {
             Ok(_) => Err(errors::Error::NamespaceExists {
                 namespace: name.to_string(),
@@ -132,7 +131,6 @@ impl Namespace {
 
     /// Deletes the namespace and its child keyspaces.
     pub async fn delete(&self) -> Result<(), errors::Error> {
-        let _guard = self.database.namespace_lock.lock().await;
         self.keyspaces.delete(&self.database).await?;
         let name = self.name.as_ref();
         self.database
@@ -251,7 +249,6 @@ async fn create_last_ids(system: &keyspace::Keyspace) -> Result<UniqueIds, error
 pub async fn load_all(
     db: &Arc<database::Database>,
 ) -> Result<HashMap<Name, Arc<Namespace>>, errors::Error> {
-    let _guard = db.namespace_lock.lock().await;
     let mut namespaces = HashMap::new();
     let items: Vec<fjall::Guard> = db.system.handle.prefix("ns:").collect();
     for item in items {
@@ -293,7 +290,7 @@ mod tests {
     use test_context::test_context;
 
     #[test_context(TestContext)]
-    #[tokio::test]
+    #[compio::test]
     async fn test_create_get_delete_node(ctx: &mut TestContext) {
         let state = ctx.state.clone();
         let ns = Namespace::create(&state.database, "test", None, None, None)
@@ -308,7 +305,7 @@ mod tests {
     }
 
     #[test_context(TestContext)]
-    #[tokio::test]
+    #[compio::test]
     async fn test_get_next_id_concurrency(ctx: &mut TestContext) {
         let ns = Namespace::create(&ctx.state.database, "test", None, None, None)
             .await

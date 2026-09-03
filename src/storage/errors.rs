@@ -11,7 +11,7 @@ pub enum Error {
     Database(#[from] fjall::Error),
 
     #[error("failed to execute blocking operation: {0}")]
-    IO(#[from] tokio::task::JoinError),
+    IO(#[from] compio::runtime::JoinError),
 
     #[error("namespace already exists")]
     NamespaceExists { namespace: String },

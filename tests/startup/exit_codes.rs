@@ -1,13 +1,15 @@
-use assert_cmd::Command;
-use dotilla::http::server;
-use dotilla::state::AppState;
-use predicates::prelude::*;
 use std::io::Write;
-use std::net::{IpAddr, Ipv4Addr};
-use tempfile::tempdir;
-use tokio::time::{Duration, sleep};
+use std::time::Duration;
 
-use crate::common::config::*;
+use assert_cmd::Command;
+use compio::runtime::spawn;
+use compio::time::sleep;
+use predicates::prelude::*;
+use tempfile::tempdir;
+use test_context::test_context;
+
+use dotilla::http::server;
+use dotilla::test_helpers::TestContext;
 
 #[test]
 fn main_exits_2_on_missing_config() {
@@ -40,21 +42,19 @@ fn main_exits_4_on_invalid_data_directory() {
         .code(4);
 }
 
-#[tokio::test]
-async fn main_exits_11_database_error() {
-    let cfg = write_config_with_ephemeral_port();
-    let app_state = AppState::initialize(cfg.path.clone()).await.unwrap();
-    let port = cfg.port.unwrap();
-    let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    let first_server = tokio::spawn(async move { server::serve(ip_addr, port, app_state).await });
+#[test_context(TestContext)]
+#[compio::test]
+async fn main_exits_10_database_error(ctx: &mut TestContext) {
+    let state = ctx.state.clone();
+    let first_server = spawn(async move { server::Server::new(state).serve().await });
     sleep(Duration::from_millis(500)).await;
     assert!(!first_server.is_finished());
     Command::cargo_bin("dotilla")
         .unwrap()
         .arg("--config")
-        .arg(&cfg.path)
+        .arg(ctx.temp_dir.path().join("config.toml"))
         .assert()
         .failure()
-        .code(11);
-    first_server.abort();
+        .code(10);
+    let _ = first_server.cancel().await;
 }

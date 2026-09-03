@@ -169,7 +169,7 @@ mod tests {
     use test_context::test_context;
 
     #[test_context(TestContext)]
-    #[tokio::test]
+    #[compio::test]
     async fn test_create_get_delete_node(ctx: &mut TestContext) {
         let namespace = namespace::Namespace::create(&ctx.state.database, "test", None, None, None)
             .await

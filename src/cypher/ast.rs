@@ -1,3 +1,5 @@
+// Cypher AST implemented based off OpenCypher 9 bnf grammar
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Program {
     Procedure(CompositeStatement),

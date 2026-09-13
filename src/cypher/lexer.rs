@@ -507,7 +507,7 @@ mod tests {
         assert_eq!(tokens[68].kind, TokenKind::Punct(Punct::Comma));
         assert_eq!(tokens[69].kind, TokenKind::Identifier("s".to_string()));
         assert_eq!(tokens[70].kind, TokenKind::Punct(Punct::Comma));
-        assert_eq!(tokens[71].kind, TokenKind::Identifier("count".to_string()));
+        assert_eq!(tokens[71].kind, TokenKind::Keyword(Keyword::Count));
         assert_eq!(tokens[72].kind, TokenKind::Punct(Punct::LParen));
         assert_eq!(tokens[73].kind, TokenKind::Identifier("p".to_string()));
         assert_eq!(tokens[74].kind, TokenKind::Punct(Punct::Dot));
@@ -711,7 +711,7 @@ mod tests {
         assert_eq!(tokens[4].kind, TokenKind::Identifier("Person".to_string()));
         assert_eq!(tokens[5].kind, TokenKind::Punct(Punct::RParen));
         assert_eq!(tokens[6].kind, TokenKind::Keyword(Keyword::Return));
-        assert_eq!(tokens[7].kind, TokenKind::Identifier("count".to_string()));
+        assert_eq!(tokens[7].kind, TokenKind::Keyword(Keyword::Count));
         assert_eq!(tokens[8].kind, TokenKind::Punct(Punct::LParen));
         assert_eq!(tokens[9].kind, TokenKind::Identifier("n".to_string()));
         assert_eq!(tokens[10].kind, TokenKind::Punct(Punct::RParen));

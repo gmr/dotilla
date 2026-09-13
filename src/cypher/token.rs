@@ -18,7 +18,7 @@ impl Token {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
@@ -30,7 +30,7 @@ impl fmt::Display for Span {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, strum::Display)]
+#[derive(Clone, Debug, PartialEq, strum::AsRefStr)]
 pub enum TokenKind {
     Keyword(Keyword),
     Identifier(String),
@@ -43,11 +43,29 @@ pub enum TokenKind {
     Eof,
 }
 
-#[derive(Clone, Debug, PartialEq, strum::Display, strum::EnumString)]
-#[strum(ascii_case_insensitive)]
+impl fmt::Display for TokenKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            Self::Keyword(value) => value.to_string(),
+            Self::Identifier(value) => value.to_string(),
+            Self::Integer(value) => value.to_string(),
+            Self::Float(value) => value.to_string(),
+            Self::String(value) => value.to_string(),
+            Self::Parameter(value) => value.to_string(),
+            Self::Op(value) => value.to_string(),
+            Self::Punct(value) => value.to_string(),
+            Self::Eof => "EOF".to_string(),
+        };
+        formatter.write_str(value.as_str())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, strum::AsRefStr, strum::Display, strum::EnumString)]
+#[strum(ascii_case_insensitive, serialize_all = "UPPERCASE")]
 pub enum Keyword {
     All,
     And,
+    Any,
     As,
     Asc,
     Ascending,
@@ -56,6 +74,7 @@ pub enum Keyword {
     Case,
     Contains,
     Constraint,
+    Count,
     Create,
     Cypher,
     Delete,
@@ -69,6 +88,8 @@ pub enum Keyword {
     Ends,
     Exists,
     False,
+    Group,
+    Groups,
     In,
     Is,
     Limit,
@@ -82,9 +103,13 @@ pub enum Keyword {
     Optional,
     Or,
     Order,
+    Path,
+    Paths,
     Remove,
     Return,
     Set,
+    Shortest,
+    Single,
     Skip,
     Starts,
     Then,
@@ -99,7 +124,7 @@ pub enum Keyword {
     Yield,
 }
 
-#[derive(Clone, Debug, PartialEq, strum::Display, strum::EnumString)]
+#[derive(Clone, Debug, PartialEq, strum::AsRefStr, strum::Display, strum::EnumString)]
 pub enum Op {
     #[strum(serialize = "=")]
     Eq,
@@ -131,7 +156,7 @@ pub enum Op {
     EqTilde,
 }
 
-#[derive(Clone, Debug, PartialEq, strum::EnumString)]
+#[derive(Clone, Debug, PartialEq, strum::AsRefStr, strum::EnumString)]
 pub enum Punct {
     #[strum(serialize = "(")]
     LParen,
@@ -157,6 +182,10 @@ pub enum Punct {
     Semi,
     #[strum(serialize = "|")]
     Pipe,
+    #[strum(serialize = "!")]
+    Not,
+    #[strum(serialize = "&")]
+    And,
 }
 
 impl fmt::Display for Punct {
@@ -174,6 +203,8 @@ impl fmt::Display for Punct {
             Punct::DotDot => "..",
             Punct::Semi => ";",
             Punct::Pipe => "|",
+            Punct::Not => "!",
+            Punct::And => "&",
         })
     }
 }

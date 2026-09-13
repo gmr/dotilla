@@ -1,327 +1,99 @@
-// Cypher AST implemented based off OpenCypher 9 bnf grammar
+// Cypher AST
+use std::collections::HashMap;
+
+use super::{errors, token};
+
+macro_rules! string_value {
+    ($name:ident, $label:literal) => {
+        #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub struct $name(pub String);
+
+        impl $name {
+            pub fn new(value: impl Into<String>) -> Self {
+                Self(value.into())
+            }
+
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+
+            pub fn into_inner(self) -> String {
+                self.0
+            }
+
+            pub fn len(&self) -> usize {
+                self.0.len()
+            }
+
+            pub fn is_empty(&self) -> bool {
+                self.0.is_empty()
+            }
+        }
+
+        impl AsRef<str> for $name {
+            fn as_ref(&self) -> &str {
+                &self.0
+            }
+        }
+    };
+}
+
+string_value!(Label, "Label");
+string_value!(Variable, "Variable");
+string_value!(Property, "Property");
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Program {
-    Procedure(CompositeStatement),
-    StandaloneCall(StandaloneProcedureCall),
+pub struct PropertyReference {
+    pub variable: Variable,
+    pub property: Property,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompositeStatement {
-    pub head: LinearStatement,
-    pub tail: Vec<UnionArm>,
-}
-
-/// One `UNION [ ALL | DISTINCT ] <linear statement>`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct UnionArm {
-    pub quantifier: Option<SetQuantifier>,
-    pub statement: LinearStatement,
+pub struct Query {
+    clauses: Vec<Clause>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LinearStatement {
-    pub statements: Vec<PrimitiveStatement>,
-    pub result: Option<ReturnStatement>,
+pub enum Clause {
+    Match(Match),
+    Return(Return),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PrimitiveStatement {
-    Match(MatchStatement),
-    Unwind(UnwindStatement),
-    With(WithStatement),
-    Create(CreateStatement),
-    Merge(MergeStatement),
-    Set(SetStatement),
-    Remove(RemoveStatement),
-    Delete(DeleteStatement),
-    Call(NamedProcedureCall),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SetQuantifier {
-    All,
-    Distinct,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct MatchStatement {
+pub struct Match {
     pub optional: bool,
-    pub pattern: GraphPattern,
+    pub paths: Vec<Path>,
+    pub where_clause: Option<Expression>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct UnwindStatement {
-    pub expression: Expr,
-    pub variable: Ident,
+pub struct Path {
+    pub left: Node,
+    pub edge: Option<Edge>,
+    pub direction: Option<Direction>,
+    pub right: Option<Node>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct WithStatement {
-    pub body: ReturnBody,
-    pub order_and_page: Option<OrderByAndPage>,
-    pub where_clause: Option<Expr>,
+pub struct Node {
+    pub variable: Variable,
+    pub labels: Vec<Label>,
+    pub properties: Vec<PropertyReference>,
+    pub predicates: Vec<Predicate>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReturnStatement {
-    pub body: ReturnBody,
-    pub order_and_page: Option<OrderByAndPage>,
+pub struct Predicate {
+    properties: Option<HashMap<Property, Literal>>,
+    where_clause: Option<Expression>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReturnBody {
-    pub quantifier: Option<SetQuantifier>,
-    pub star: bool,
-    pub items: Vec<ReturnItem>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ReturnItem {
-    pub expression: Expr,
-    pub alias: Option<Ident>,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct OrderByAndPage {
-    pub order_by: Vec<SortSpecification>,
-    pub offset: Option<Expr>,
-    pub limit: Option<Expr>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SortSpecification {
-    pub key: Expr,
-    pub order: Option<SortOrder>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SortOrder {
-    Ascending,
-    Descending,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CreateStatement {
-    pub patterns: Vec<WritePathPattern>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct MergeStatement {
-    pub pattern: WritePathPattern,
-    pub action: Option<MergeAction>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct MergeAction {
-    pub trigger: MergeTrigger,
-    pub set: SetStatement,
-}
-
-/// `ON MATCH` / `ON CREATE`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MergeTrigger {
-    Match,
-    Create,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SetStatement {
-    pub items: Vec<SetItem>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SetItem {
-    /// `v = expr`
-    AllProperties { target: Ident, value: Expr },
-    /// `v += expr`
-    AddAllProperties { target: Ident, value: Expr },
-    /// `v:A:B`
-    Labels { target: Ident, labels: Vec<Ident> },
-    /// `expr.key = expr`, where `target` is a postfix expression.
-    Property { target: Expr, value: Expr },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct RemoveStatement {
-    pub items: Vec<RemoveItem>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum RemoveItem {
-    Labels { target: Ident, labels: Vec<Ident> },
-    Property(Expr),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct DeleteStatement {
-    pub detach: bool,
-    pub items: Vec<Expr>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct NamedProcedureCall {
-    pub procedure: ProcedureReference,
-    pub arguments: Vec<Expr>,
-    pub yield_clause: Option<YieldClause>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct StandaloneProcedureCall {
-    pub procedure: ProcedureReference,
-    pub arguments: Option<Vec<Expr>>,
-    pub yield_clause: Option<StandaloneYieldClause>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct YieldClause {
-    pub items: Vec<YieldItem>,
-    pub where_clause: Option<Expr>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum StandaloneYieldClause {
-    /// `YIELD *`
-    All,
-    /// Non-empty.
-    Items(Vec<YieldItem>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct YieldItem {
-    pub name: Ident,
-    pub alias: Option<Ident>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ProcedureReference {
-    /// `<catalog object parent reference>`, outermost first.
-    pub namespace: Vec<Ident>,
-    pub name: Ident,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FunctionReference {
-    pub namespace: Vec<Ident>,
-    pub name: Ident,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct GraphPattern {
-    pub paths: Vec<PathPattern>,
-    pub where_clause: Option<Expr>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PathPattern {
-    /// `p = ...`
-    pub variable: Option<Ident>,
-    pub prefix: Option<PathSearchPrefix>,
-    pub expression: PathPatternExpression,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PathSearchPrefix {
-    /// `ALL [ PATH | PATHS ]`
-    All,
-    /// `ANY [ k ] [ PATH | PATHS ]`
-    Any { count: Option<UnsignedInteger> },
-    /// `ALL SHORTEST [ PATH | PATHS ]`
-    AllShortest,
-    /// `ANY SHORTEST [ PATH | PATHS ]`
-    AnyShortest,
-    /// `SHORTEST k [ PATH | PATHS ]`
-    ShortestPaths { count: UnsignedInteger },
-    /// `SHORTEST [ k ] [ PATH | PATHS ] { GROUP | GROUPS }`
-    ShortestGroups { count: Option<UnsignedInteger> },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum UnsignedInteger {
-    Literal(u64),
-    Parameter(Ident),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PathPatternExpression {
-    Concatenation(Vec<PathFactor>),
-    Legacy(Box<LegacyShortestPath>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PathFactor {
-    pub primary: PathPrimary,
-    pub quantifier: Option<PatternQuantifier>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PathPrimary {
-    Element(ElementPattern),
-    Parenthesized(Box<ParenthesizedPathPattern>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ParenthesizedPathPattern {
-    pub variable: Option<Ident>,
-    pub expression: PathPatternExpression,
-    pub where_clause: Option<Expr>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LegacyShortestPath {
-    pub kind: LegacyShortestKind,
-    pub start: NodePattern,
-    pub relationship: RelationshipPattern,
-    pub end: NodePattern,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LegacyShortestKind {
-    Shortest,
-    AllShortest,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PatternQuantifier {
-    ZeroOrMore,
-    OneOrMore,
-    Fixed(u64),
-    Range {
-        lower: Option<u64>,
-        upper: Option<u64>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SimplePathPattern {
-    pub start: NodePattern,
-    pub steps: Vec<PathStep>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PathStep {
-    pub relationship: RelationshipPattern,
-    pub node: NodePattern,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ElementPattern {
-    Node(NodePattern),
-    Relationship(RelationshipPattern),
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct NodePattern {
-    pub variable: Option<Ident>,
-    pub label: Option<LabelExpression>,
-    pub predicate: Option<ElementPredicate>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct RelationshipPattern {
-    pub direction: Direction,
-    /// `None` when the `[...]` bracket is absent entirely.
-    pub detail: Option<RelationshipDetail>,
+pub struct Edge {
+    pub variable: Option<Variable>,
+    pub label: Label,
+    pub properties: Vec<PropertyReference>,
+    pub predicates: Vec<Predicate>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -336,162 +108,93 @@ pub enum Direction {
     Undirected,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct RelationshipDetail {
-    pub variable: Option<Ident>,
-    pub label: Option<LabelExpression>,
-    pub length: Option<PathLength>,
-    pub predicate: Option<ElementPredicate>,
+#[derive(Debug, Clone, PartialEq)]
+pub struct Return {
+    pub items: Vec<PropertyReference>,
+    pub order_by: Vec<OrderBy>,
+    pub skip: Option<u64>,
+    pub limit: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PathLength {
-    /// `*`
-    Any,
-    /// `*n`
-    Fixed(u64),
-    /// `*m..n`, either bound optional.
-    Range {
-        lower: Option<u64>,
-        upper: Option<u64>,
-    },
+pub struct OrderBy {
+    pub item: PropertyReference,
+    pub direction: OrderDirection,
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
+)]
+pub enum OrderDirection {
+    #[strum(serialize = "ASC")]
+    Asc,
+    #[strum(serialize = "DESC")]
+    Desc,
+}
+
+// Expressions
 #[derive(Debug, Clone, PartialEq)]
-pub enum ElementPredicate {
-    /// `WHERE expr`
-    Where(Box<Expr>),
-    /// `{ k: v, ... }`
-    Properties(Vec<PropertyKeyValuePair>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PropertyKeyValuePair {
-    pub key: Ident,
-    pub value: Expr,
-}
-
-/// Data update patterns (CREATE and MERGE)
-#[derive(Debug, Clone, PartialEq)]
-pub struct WritePathPattern {
-    pub variable: Option<Ident>,
-    pub start: WriteNodePattern,
-    pub steps: Vec<WritePathStep>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct WritePathStep {
-    pub relationship: WriteRelationshipPattern,
-    pub node: WriteNodePattern,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct WriteNodePattern {
-    pub variable: Option<Ident>,
-    pub labels: Vec<Ident>,
-    pub properties: Option<ElementProperties>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct WriteRelationshipPattern {
-    pub direction: WriteDirection,
-    pub variable: Option<Ident>,
-    /// Exactly one label is required when writing.
-    pub label: Ident,
-    pub properties: Option<ElementProperties>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WriteDirection {
-    Left,
-    Right,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ElementProperties {
-    Map(Vec<PropertyKeyValuePair>),
-    Parameter(Ident),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum LabelExpression {
-    Label(Ident),
-    /// `%`
-    Wildcard,
-    /// `!expr`
-    Not(Box<LabelExpression>),
-    /// `lhs & rhs`
-    And(Box<LabelExpression>, Box<LabelExpression>),
-    /// `lhs | rhs`
-    Or(Box<LabelExpression>, Box<LabelExpression>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Expr {
-    /// `<binding variable reference>`
-    Variable(Ident),
-    /// `<general parameter reference>`, `$name`.
-    Parameter(Ident),
+pub enum Expression {
     Literal(Literal),
     /// `OR`, `XOR`, `AND`, and the arithmetic operators.
     Binary {
         op: BinaryOp,
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
     },
     /// `NOT`, unary `+`, unary `-`.
     Unary {
         op: UnaryOp,
-        operand: Box<Expr>,
+        operand: Box<Expression>,
     },
     /// `<comparison predicate>`
     Comparison(Box<Comparison>),
-    /// `<postfix expression>`: property access, indexing, slicing.
-    Postfix {
-        operand: Box<Expr>,
-        op: Box<PostfixOp>,
-    },
-    /// A bare pattern used as a predicate, `<pattern expression>`.
-    Pattern(Box<SimplePathPattern>),
-    /// `<shortest path expression>`
-    ShortestPath(Box<LegacyShortestPath>),
-    /// `CASE ... END`
-    Case(Box<CaseExpression>),
-    /// `COUNT(*)`
-    CountStar,
-    /// `EXISTS { ... }`
-    Exists(Box<SubqueryArgument>),
-    /// `v { ... }`
-    MapProjection(Box<MapProjection>),
-    /// `[ v IN expr WHERE p | e ]`
-    ListComprehension(Box<ListComprehension>),
-    /// `[ p = (a)-[r]->(b) WHERE p | e ]`
-    PatternComprehension(Box<PatternComprehension>),
-    /// `REDUCE(acc = init, v IN list | step)`
-    Reduce(Box<ReduceExpression>),
-    /// `ALL`/`ANY`/`SINGLE`/`NONE`` (v IN list WHERE p)`
-    Quantifier(Box<QuantifierExpression>),
-    /// `TRIM(expr)`
-    Trim(Box<Expr>),
-    /// `<function invocation>`
-    Function(Box<FunctionInvocation>),
-    /// `[ a, b, c ]`
-    List(Vec<Expr>),
-    /// `{ a: 1, b: 2 }`
-    Map(Vec<Field>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Comparison {
+    pub lhs: Box<Expression>,
+    pub op: ComparisonOp,
+    pub rhs: Box<Expression>,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
+)]
 pub enum BinaryOp {
+    #[strum(serialize = "OR")]
     Or,
+    #[strum(serialize = "XOR")]
     Xor,
+    #[strum(serialize = "AND")]
     And,
+    #[strum(serialize = "+")]
     Add,
+    #[strum(serialize = "-")]
     Subtract,
+    #[strum(serialize = "*")]
     Multiply,
+    #[strum(serialize = "/")]
     Divide,
+    #[strum(serialize = "%")]
     Modulo,
+    #[strum(serialize = "^")]
     Power,
+}
+
+impl TryFrom<&token::Token> for BinaryOp {
+    type Error = strum::ParseError;
+
+    fn try_from(value: &token::Token) -> Result<Self, Self::Error> {
+        match &value.kind {
+            token::TokenKind::Punct(token::Punct::And) => Ok(Self::And),
+            token::TokenKind::Punct(token::Punct::Pipe) => Ok(Self::Or),
+            other => {
+                let strval = other.to_string();
+                Self::try_from(strval.as_str())
+            }
+        }
+    }
 }
 
 impl BinaryOp {
@@ -507,51 +210,47 @@ impl BinaryOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
+)]
 pub enum UnaryOp {
+    #[strum(serialize = "NOT")]
     Not,
+    #[strum(serialize = "+")]
     Plus,
+    #[strum(serialize = "-")]
     Minus,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Comparison {
-    pub first: ComparisonPredicand,
-    pub rest: Vec<ComparisonPart>,
+impl TryFrom<&token::Token> for UnaryOp {
+    type Error = strum::ParseError;
+
+    fn try_from(value: &token::Token) -> Result<Self, Self::Error> {
+        match &value.kind {
+            token::TokenKind::Op(token::Op::Plus) => Ok(Self::Plus),
+            token::TokenKind::Op(token::Op::Minus) => Ok(Self::Minus),
+            token::TokenKind::Punct(token::Punct::Not) => Ok(Self::Not),
+            token::TokenKind::Keyword(token::Keyword::Not) => Ok(Self::Not),
+            _ => Err(strum::ParseError::VariantNotFound),
+        }
+    }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ComparisonPredicand {
-    pub operand: Expr,
-    pub advanced: Option<AdvancedComparison>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ComparisonPart {
-    pub op: ComparisonOp,
-    pub operand: Expr,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum AdvancedComparison {
-    /// `IN`, `CONTAINS`, `=~`, `STARTS WITH`, `ENDS WITH`.
-    Op {
-        op: AdvancedCompOp,
-        operand: Box<Expr>,
-    },
-    /// `IS [ NOT ] NULL`
-    IsNull { negated: bool },
-    /// `IS <label expression>` / `: <label expression>`
-    IsLabeled(LabelExpression),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
+)]
 pub enum ComparisonOp {
+    #[strum(serialize = "=")]
     Equal,
+    #[strum(serialize = "<>")]
     NotEqual,
+    #[strum(serialize = "<")]
     Less,
+    #[strum(serialize = ">")]
     Greater,
+    #[strum(serialize = "<=")]
     LessOrEqual,
+    #[strum(serialize = ">=")]
     GreaterOrEqual,
 }
 
@@ -561,12 +260,19 @@ impl ComparisonOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
+)]
 pub enum AdvancedCompOp {
+    #[strum(serialize = "CONTAINS")]
     Contains,
+    #[strum(serialize = "IN")]
     In,
+    #[strum(serialize = "=~")]
     RegexEqual,
+    #[strum(serialize = "STARTS WITH")]
     StartsWith,
+    #[strum(serialize = "ENDS WITH")]
     EndsWith,
 }
 
@@ -577,116 +283,11 @@ impl AdvancedCompOp {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PostfixOp {
-    /// `.name`
-    Property(Ident),
-    /// `[expr]`
-    Index(Expr),
-    /// `[from..to]`, either bound optional.
-    Slice {
-        from: Option<Expr>,
-        to: Option<Expr>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CaseExpression {
-    pub operand: Option<Expr>,
-    pub whens: Vec<WhenClause>,
-    pub else_result: Option<Expr>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct WhenClause {
-    pub operands: Vec<Expr>,
-    pub result: Expr,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SubqueryArgument {
-    Procedure(CompositeStatement),
-    Pattern(GraphPattern),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct MapProjection {
-    pub variable: Ident,
-    pub elements: Vec<MapProjectionElement>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum MapProjectionElement {
-    /// `key: expr`
-    Literal { key: Ident, value: Expr },
-    /// `.name`
-    Field(Ident),
-    /// `v`
-    Variable(Ident),
-    /// `.*`
-    AllFields,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ListComprehension {
-    pub variable: Ident,
-    pub source: Expr,
-    pub filter: Option<Expr>,
-    pub projection: Option<Expr>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PatternComprehension {
-    pub variable: Option<Ident>,
-    pub pattern: SimplePathPattern,
-    pub filter: Option<Expr>,
-    pub projection: Expr,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ReduceExpression {
-    pub accumulator: Ident,
-    pub initial: Expr,
-    pub variable: Ident,
-    pub source: Expr,
-    pub step: Expr,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct QuantifierExpression {
-    pub quantifier: Quantifier,
-    pub variable: Ident,
-    pub source: Expr,
-    pub predicate: Expr,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Quantifier {
-    All,
-    Any,
-    Single,
-    None,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FunctionInvocation {
-    pub function: FunctionReference,
-    /// `count(DISTINCT x)`
-    pub quantifier: Option<SetQuantifier>,
-    pub arguments: Vec<Expr>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Field {
-    pub name: Ident,
-    pub value: Expr,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Null,
     Boolean(bool),
     String(String),
-    Integer(i64),
+    Integer(u64),
     Float(f64),
     /// `INF` / `INFINITY`, with an optional leading sign.
     Infinity {
@@ -695,52 +296,23 @@ pub enum Literal {
     Nan,
     /// `<list literal>`: elements are literals, not expressions.
     List(Vec<Literal>),
-    /// `<map literal>`: values are literals, not expressions.
-    Map(Vec<FieldLiteral>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FieldLiteral {
-    pub name: Ident,
-    pub value: Literal,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Ident(pub String);
-
-impl Ident {
-    pub fn new(name: impl Into<String>) -> Self {
-        Ident(name.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<&str> for Ident {
-    fn from(name: &str) -> Self {
-        Ident(name.to_owned())
-    }
-}
-
-impl From<String> for Ident {
-    fn from(name: String) -> Self {
-        Ident(name)
-    }
-}
-
-impl std::fmt::Display for Ident {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::ops::Deref for Ident {
-    type Target = str;
-
-    fn deref(&self) -> &str {
-        &self.0
+impl Literal {
+    pub fn try_from(token: token::TokenKind) -> Result<Self, errors::Error> {
+        match token {
+            token::TokenKind::Keyword(token::Keyword::Null) => Ok(Self::Null),
+            token::TokenKind::Keyword(token::Keyword::True) => Ok(Self::Boolean(true)),
+            token::TokenKind::Keyword(token::Keyword::False) => Ok(Self::Boolean(false)),
+            token::TokenKind::Identifier(value) => Ok(Self::String(value)),
+            token::TokenKind::Integer(value) => Ok(Self::Integer(value)),
+            token::TokenKind::Float(value) => Ok(Self::Float(value)),
+            token::TokenKind::String(value) => Ok(Self::String(value)),
+            _ => Err(errors::Error::UnexpectedToken {
+                location: "Literal::try_from".to_string(),
+                token,
+            }),
+        }
     }
 }
 

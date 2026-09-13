@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use super::token::Span;
+use super::token::{Span, TokenKind};
 
 #[derive(Debug, Error, PartialEq)]
 pub enum Error {
@@ -12,6 +12,8 @@ pub enum Error {
     InvalidIdentifier { span: Span },
     #[error("invalid parameter: {span}")]
     InvalidParameter { span: Span },
+    #[error("not implemented")]
+    NotImplemented,
     #[error("number out of range: {span}")]
     NumberOutOfRange { span: Span },
     #[error("parse error `{source}` at {span}")]
@@ -26,8 +28,14 @@ pub enum Error {
         source: std::num::ParseFloatError,
         span: Span,
     },
+    #[error("token parse error")]
+    TokenParseError(#[from] strum::ParseError),
     #[error("unexpected character {byte} at {span}")]
     UnexpectedByte { byte: u8, span: Span },
+    #[error("unexpected end of tokens")]
+    UnexpectedEof,
+    #[error("unexpected token: {token:?} in {location}")]
+    UnexpectedToken { location: String, token: TokenKind },
     #[error("unterminated comment: {span}")]
     UnterminatedComment { span: Span },
     #[error("unterminated identifier: {span}")]
@@ -43,10 +51,14 @@ impl Error {
             Error::InvalidEscape { span } => Some(*span),
             Error::InvalidIdentifier { span } => Some(*span),
             Error::InvalidParameter { span } => Some(*span),
+            Error::NotImplemented => None,
             Error::NumberOutOfRange { span } => Some(*span),
             Error::ParseError { span, .. } => Some(*span),
             Error::ParseFloatError { span, .. } => Some(*span),
+            Error::TokenParseError(_) => None,
             Error::UnexpectedByte { span, .. } => Some(*span),
+            Error::UnexpectedEof => None,
+            Error::UnexpectedToken { .. } => None,
             Error::UnterminatedComment { span } => Some(*span),
             Error::UnterminatedIdentifier { span } => Some(*span),
             Error::UnterminatedString { span } => Some(*span),

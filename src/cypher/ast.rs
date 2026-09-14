@@ -1,52 +1,6 @@
-// Cypher AST
 use std::collections::HashMap;
 
 use super::{errors, token};
-
-macro_rules! string_value {
-    ($name:ident, $label:literal) => {
-        #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub struct $name(pub String);
-
-        impl $name {
-            pub fn new(value: impl Into<String>) -> Self {
-                Self(value.into())
-            }
-
-            pub fn as_str(&self) -> &str {
-                &self.0
-            }
-
-            pub fn into_inner(self) -> String {
-                self.0
-            }
-
-            pub fn len(&self) -> usize {
-                self.0.len()
-            }
-
-            pub fn is_empty(&self) -> bool {
-                self.0.is_empty()
-            }
-        }
-
-        impl AsRef<str> for $name {
-            fn as_ref(&self) -> &str {
-                &self.0
-            }
-        }
-    };
-}
-
-string_value!(Label, "Label");
-string_value!(Variable, "Variable");
-string_value!(Property, "Property");
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PropertyReference {
-    pub variable: Variable,
-    pub property: Property,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Query {
@@ -67,18 +21,19 @@ pub struct Match {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Path {
-    pub left: Node,
-    pub edge: Option<Edge>,
-    pub direction: Option<Direction>,
-    pub right: Option<Node>,
+pub struct Path(Vec<Segment>);
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Segment {
+    Node(Node),
+    Edge(Edge),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
-    pub variable: Variable,
+    pub variable: Option<Variable>,
     pub labels: Vec<Label>,
-    pub properties: Vec<PropertyReference>,
+    pub properties: Option<HashMap<Property, Literal>>,
     pub predicates: Vec<Predicate>,
 }
 
@@ -91,8 +46,8 @@ pub struct Predicate {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edge {
     pub variable: Option<Variable>,
-    pub label: Label,
-    pub properties: Vec<PropertyReference>,
+    pub label: Option<Label>,
+    pub properties: Option<HashMap<Property, Literal>>,
     pub predicates: Vec<Predicate>,
 }
 
@@ -132,227 +87,45 @@ pub enum OrderDirection {
     Desc,
 }
 
-// Expressions
-#[derive(Debug, Clone, PartialEq)]
-pub enum Expression {
-    Identifier(String),
-    Literal(Literal),
-    AdvancedComparison {
-        op: AdvancedComparisonOp,
-        lhs: Box<Expression>,
-        rhs: Box<Expression>,
-    },
-    /// `OR`, `XOR`, `AND`, and the arithmetic operators.
-    Binary {
-        op: BinaryOp,
-        lhs: Box<Expression>,
-        rhs: Box<Expression>,
-    },
-    Comparison {
-        lhs: Box<Expression>,
-        op: ComparisonOp,
-        rhs: Box<Expression>,
-    },
-    /// `NOT`, unary `+`, unary `-`.
-    Unary {
-        op: UnaryOp,
-        operand: Box<Expression>,
-    },
-    PropertyReference(PropertyReference),
-}
+/// Macro for defining string value types (e.g. `Label`, `Variable`, `Property`)
+macro_rules! string_value {
+    ($name:ident, $label:literal) => {
+        #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub struct $name(pub String);
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
-)]
-pub enum AdvancedComparisonOp {
-    #[strum(serialize = "CONTAINS")]
-    Contains,
-    #[strum(serialize = "IN")]
-    In,
-    #[strum(serialize = "=~")]
-    RegexEqual,
-    #[strum(serialize = "STARTS WITH")]
-    StartsWith,
-    #[strum(serialize = "ENDS WITH")]
-    EndsWith,
-}
+        impl $name {
+            pub fn new(value: impl Into<String>) -> Self {
+                Self(value.into())
+            }
 
-impl AdvancedComparisonOp {
-    pub const fn binding_power(self) -> u8 {
-        9
-    }
-}
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
 
-impl TryFrom<token::Token> for AdvancedComparisonOp {
-    type Error = strum::ParseError;
+            pub fn into_inner(self) -> String {
+                self.0
+            }
 
-    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
-        match value.kind {
-            token::TokenKind::Keyword(token::Keyword::Contains) => Ok(Self::Contains),
-            token::TokenKind::Keyword(token::Keyword::In) => Ok(Self::In),
-            token::TokenKind::Op(token::Op::EqTilde) => Ok(Self::RegexEqual),
-            _ => Err(strum::ParseError::VariantNotFound),
-        }
-    }
-}
+            pub fn len(&self) -> usize {
+                self.0.len()
+            }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
-)]
-pub enum BinaryOp {
-    #[strum(serialize = "OR")]
-    Or,
-    #[strum(serialize = "XOR")]
-    Xor,
-    #[strum(serialize = "AND")]
-    And,
-    #[strum(serialize = "+")]
-    Add,
-    #[strum(serialize = "-")]
-    Subtract,
-    #[strum(serialize = "*")]
-    Multiply,
-    #[strum(serialize = "/")]
-    Divide,
-    #[strum(serialize = "%")]
-    Modulo,
-    #[strum(serialize = "^")]
-    Power,
-}
-
-impl TryFrom<token::Token> for BinaryOp {
-    type Error = strum::ParseError;
-
-    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
-        match value.kind {
-            token::TokenKind::Punct(token::Punct::And) => Ok(Self::And),
-            token::TokenKind::Punct(token::Punct::Pipe) => Ok(Self::Or),
-            other => {
-                let strval = other.to_string();
-                Self::try_from(strval.as_str())
+            pub fn is_empty(&self) -> bool {
+                self.0.is_empty()
             }
         }
-    }
-}
 
-impl BinaryOp {
-    pub const fn binding_power(self) -> u8 {
-        match self {
-            Self::Or => 1,
-            Self::Xor => 3,
-            Self::And => 5,
-            Self::Add | Self::Subtract => 13,
-            Self::Multiply | Self::Divide | Self::Modulo => 15,
-            Self::Power => 19,
+        impl AsRef<str> for $name {
+            fn as_ref(&self) -> &str {
+                &self.0
+            }
         }
-    }
+    };
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
-)]
-pub enum ComparisonOp {
-    #[strum(serialize = "=")]
-    Equal,
-    #[strum(serialize = "<>")]
-    NotEqual,
-    #[strum(serialize = "<")]
-    Less,
-    #[strum(serialize = ">")]
-    Greater,
-    #[strum(serialize = "<=")]
-    LessOrEqual,
-    #[strum(serialize = ">=")]
-    GreaterOrEqual,
-}
-
-impl ComparisonOp {
-    pub const fn binding_power(self) -> u8 {
-        11
-    }
-}
-
-impl TryFrom<token::Token> for ComparisonOp {
-    type Error = strum::ParseError;
-
-    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
-        match value.kind {
-            token::TokenKind::Op(token::Op::Eq) => Ok(Self::Equal),
-            token::TokenKind::Op(token::Op::Ne) => Ok(Self::NotEqual),
-            token::TokenKind::Op(token::Op::Lt) => Ok(Self::Less),
-            token::TokenKind::Op(token::Op::Gt) => Ok(Self::Greater),
-            token::TokenKind::Op(token::Op::Le) => Ok(Self::LessOrEqual),
-            token::TokenKind::Op(token::Op::Ge) => Ok(Self::GreaterOrEqual),
-            _ => Err(strum::ParseError::VariantNotFound),
-        }
-    }
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
-)]
-pub enum UnaryOp {
-    #[strum(serialize = "NOT")]
-    Not,
-    #[strum(serialize = "+")]
-    Plus,
-    #[strum(serialize = "-")]
-    Minus,
-}
-
-impl TryFrom<token::Token> for UnaryOp {
-    type Error = strum::ParseError;
-
-    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
-        match &value.kind {
-            token::TokenKind::Op(token::Op::Plus) => Ok(Self::Plus),
-            token::TokenKind::Op(token::Op::Minus) => Ok(Self::Minus),
-            token::TokenKind::Punct(token::Punct::Not) => Ok(Self::Not),
-            token::TokenKind::Keyword(token::Keyword::Not) => Ok(Self::Not),
-            _ => Err(strum::ParseError::VariantNotFound),
-        }
-    }
-}
-
-impl UnaryOp {
-    pub const fn binding_power(self) -> u8 {
-        17
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Literal {
-    Null,
-    Boolean(bool),
-    String(String),
-    Integer(u64),
-    Float(f64),
-    /// `INF` / `INFINITY`, with an optional leading sign.
-    Infinity {
-        negative: bool,
-    },
-    Nan,
-    /// `<list literal>`: elements are literals, not expressions.
-    List(Vec<Literal>),
-}
-
-impl Literal {
-    pub fn try_from(token: token::TokenKind) -> Result<Self, errors::Error> {
-        match token {
-            token::TokenKind::Keyword(token::Keyword::Null) => Ok(Self::Null),
-            token::TokenKind::Keyword(token::Keyword::True) => Ok(Self::Boolean(true)),
-            token::TokenKind::Keyword(token::Keyword::False) => Ok(Self::Boolean(false)),
-            token::TokenKind::Identifier(value) => Ok(Self::String(value)),
-            token::TokenKind::Integer(value) => Ok(Self::Integer(value)),
-            token::TokenKind::Float(value) => Ok(Self::Float(value)),
-            token::TokenKind::String(value) => Ok(Self::String(value)),
-            _ => Err(errors::Error::UnexpectedToken {
-                location: "Literal::try_from".to_string(),
-                token,
-            }),
-        }
-    }
-}
+string_value!(Label, "Label");
+string_value!(Variable, "Variable");
+string_value!(Property, "Property");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Keyword {
@@ -563,5 +336,234 @@ impl Keyword {
 impl std::fmt::Display for Keyword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Literal {
+    Null,
+    Boolean(bool),
+    String(String),
+    Integer(u64),
+    Float(f64),
+    /// `INF` / `INFINITY`, with an optional leading sign.
+    Infinity {
+        negative: bool,
+    },
+    Nan,
+    /// `<list literal>`: elements are literals, not expressions.
+    List(Vec<Literal>),
+}
+
+impl Literal {
+    pub fn try_from(token: token::TokenKind) -> Result<Self, errors::Error> {
+        match token {
+            token::TokenKind::Keyword(token::Keyword::Null) => Ok(Self::Null),
+            token::TokenKind::Keyword(token::Keyword::True) => Ok(Self::Boolean(true)),
+            token::TokenKind::Keyword(token::Keyword::False) => Ok(Self::Boolean(false)),
+            token::TokenKind::Identifier(value) => Ok(Self::String(value)),
+            token::TokenKind::Integer(value) => Ok(Self::Integer(value)),
+            token::TokenKind::Float(value) => Ok(Self::Float(value)),
+            token::TokenKind::String(value) => Ok(Self::String(value)),
+            _ => Err(errors::Error::UnexpectedToken {
+                location: "Literal::try_from".to_string(),
+                token,
+            }),
+        }
+    }
+}
+
+// A reference to a property on a variable (`p.age` in `MATCH (p:Person) WHERE p.age > 10`)
+#[derive(Debug, Clone, PartialEq)]
+pub struct PropertyReference {
+    pub variable: Variable,
+    pub property: Property,
+}
+
+// Expressions
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expression {
+    Identifier(String),
+    Literal(Literal),
+    AdvancedComparison {
+        op: AdvancedComparisonOp,
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
+    },
+    /// `OR`, `XOR`, `AND`, and the arithmetic operators.
+    Binary {
+        op: BinaryOp,
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
+    },
+    Comparison {
+        lhs: Box<Expression>,
+        op: ComparisonOp,
+        rhs: Box<Expression>,
+    },
+    /// `NOT`, unary `+`, unary `-`.
+    Unary {
+        op: UnaryOp,
+        operand: Box<Expression>,
+    },
+    PropertyReference(PropertyReference),
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
+)]
+pub enum AdvancedComparisonOp {
+    #[strum(serialize = "CONTAINS")]
+    Contains,
+    #[strum(serialize = "IN")]
+    In,
+    #[strum(serialize = "=~")]
+    RegexEqual,
+    #[strum(serialize = "STARTS WITH")]
+    StartsWith,
+    #[strum(serialize = "ENDS WITH")]
+    EndsWith,
+}
+
+impl AdvancedComparisonOp {
+    pub const fn binding_power(self) -> u8 {
+        9
+    }
+}
+
+impl TryFrom<token::Token> for AdvancedComparisonOp {
+    type Error = strum::ParseError;
+
+    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
+        match value.kind {
+            token::TokenKind::Keyword(token::Keyword::Contains) => Ok(Self::Contains),
+            token::TokenKind::Keyword(token::Keyword::In) => Ok(Self::In),
+            token::TokenKind::Op(token::Op::EqTilde) => Ok(Self::RegexEqual),
+            _ => Err(strum::ParseError::VariantNotFound),
+        }
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
+)]
+pub enum BinaryOp {
+    #[strum(serialize = "OR")]
+    Or,
+    #[strum(serialize = "XOR")]
+    Xor,
+    #[strum(serialize = "AND")]
+    And,
+    #[strum(serialize = "+")]
+    Add,
+    #[strum(serialize = "-")]
+    Subtract,
+    #[strum(serialize = "*")]
+    Multiply,
+    #[strum(serialize = "/")]
+    Divide,
+    #[strum(serialize = "%")]
+    Modulo,
+    #[strum(serialize = "^")]
+    Power,
+}
+
+impl TryFrom<token::Token> for BinaryOp {
+    type Error = strum::ParseError;
+
+    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
+        match value.kind {
+            token::TokenKind::Punct(token::Punct::And) => Ok(Self::And),
+            token::TokenKind::Punct(token::Punct::Pipe) => Ok(Self::Or),
+            other => {
+                let strval = other.to_string();
+                Self::try_from(strval.as_str())
+            }
+        }
+    }
+}
+
+impl BinaryOp {
+    pub const fn binding_power(self) -> u8 {
+        match self {
+            Self::Or => 1,
+            Self::Xor => 3,
+            Self::And => 5,
+            Self::Add | Self::Subtract => 13,
+            Self::Multiply | Self::Divide | Self::Modulo => 15,
+            Self::Power => 19,
+        }
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
+)]
+pub enum ComparisonOp {
+    #[strum(serialize = "=")]
+    Equal,
+    #[strum(serialize = "<>")]
+    NotEqual,
+    #[strum(serialize = "<")]
+    Less,
+    #[strum(serialize = ">")]
+    Greater,
+    #[strum(serialize = "<=")]
+    LessOrEqual,
+    #[strum(serialize = ">=")]
+    GreaterOrEqual,
+}
+
+impl ComparisonOp {
+    pub const fn binding_power(self) -> u8 {
+        11
+    }
+}
+
+impl TryFrom<token::Token> for ComparisonOp {
+    type Error = strum::ParseError;
+
+    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
+        match value.kind {
+            token::TokenKind::Op(token::Op::Eq) => Ok(Self::Equal),
+            token::TokenKind::Op(token::Op::Ne) => Ok(Self::NotEqual),
+            token::TokenKind::Op(token::Op::Lt) => Ok(Self::Less),
+            token::TokenKind::Op(token::Op::Gt) => Ok(Self::Greater),
+            token::TokenKind::Op(token::Op::Le) => Ok(Self::LessOrEqual),
+            token::TokenKind::Op(token::Op::Ge) => Ok(Self::GreaterOrEqual),
+            _ => Err(strum::ParseError::VariantNotFound),
+        }
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
+)]
+pub enum UnaryOp {
+    #[strum(serialize = "NOT")]
+    Not,
+    #[strum(serialize = "+")]
+    Plus,
+    #[strum(serialize = "-")]
+    Minus,
+}
+
+impl TryFrom<token::Token> for UnaryOp {
+    type Error = strum::ParseError;
+
+    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
+        match &value.kind {
+            token::TokenKind::Op(token::Op::Plus) => Ok(Self::Plus),
+            token::TokenKind::Op(token::Op::Minus) => Ok(Self::Minus),
+            token::TokenKind::Punct(token::Punct::Not) => Ok(Self::Not),
+            token::TokenKind::Keyword(token::Keyword::Not) => Ok(Self::Not),
+            _ => Err(strum::ParseError::VariantNotFound),
+        }
+    }
+}
+
+impl UnaryOp {
+    pub const fn binding_power(self) -> u8 {
+        17
     }
 }

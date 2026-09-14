@@ -411,6 +411,132 @@ mod tests {
     }
 
     #[test]
+    /// p.score * 2 + 1
+    fn test_parse_expression_case_7() {
+        let mut parser = Parser::new(vec![
+            new_identifier_token("p"),
+            new_punct_token(token::Punct::Dot),
+            new_identifier_token("score"),
+            new_op_token(token::Op::Star),
+            token::Token {
+                kind: token::TokenKind::Integer(2),
+                span: token::Span::default(),
+            },
+            new_op_token(token::Op::Plus),
+            token::Token {
+                kind: token::TokenKind::Integer(1),
+                span: token::Span::default(),
+            },
+        ]);
+        match parser.parse_expression(0) {
+            Ok(result) => {
+                assert_eq!(
+                    result,
+                    ast::Expression::Binary {
+                        lhs: Box::new(ast::Expression::Binary {
+                            lhs: Box::new(ast::Expression::PropertyReference(
+                                ast::PropertyReference {
+                                    variable: ast::Variable("p".to_string()),
+                                    property: ast::Property("score".to_string()),
+                                }
+                            )),
+                            op: ast::BinaryOp::Multiply,
+                            rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(2))),
+                        }),
+                        op: ast::BinaryOp::Add,
+                        rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(1))),
+                    }
+                );
+            }
+            Err(err) => panic!("Unexpected error: {:?}", err),
+        }
+    }
+
+    #[test]
+    /// p.age + 1 >= 21
+    fn test_parse_expression_case_8() {
+        let mut parser = Parser::new(vec![
+            new_identifier_token("p"),
+            new_punct_token(token::Punct::Dot),
+            new_identifier_token("age"),
+            new_op_token(token::Op::Plus),
+            token::Token {
+                kind: token::TokenKind::Integer(1),
+                span: token::Span::default(),
+            },
+            new_op_token(token::Op::Ge),
+            token::Token {
+                kind: token::TokenKind::Integer(21),
+                span: token::Span::default(),
+            },
+            new_eof_token(),
+        ]);
+        match parser.parse_expression(0) {
+            Ok(result) => {
+                assert_eq!(
+                    result,
+                    ast::Expression::Comparison {
+                        lhs: Box::new(ast::Expression::Binary {
+                            lhs: Box::new(ast::Expression::PropertyReference(
+                                ast::PropertyReference {
+                                    variable: ast::Variable("p".to_string()),
+                                    property: ast::Property("age".to_string()),
+                                }
+                            )),
+                            op: ast::BinaryOp::Add,
+                            rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(1))),
+                        }),
+                        op: ast::ComparisonOp::GreaterOrEqual,
+                        rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(21))),
+                    }
+                );
+            }
+            Err(err) => panic!("Unexpected error: {:?}", err),
+        }
+    }
+
+    #[test]
+    /// p.name + "!" STARTS WITH "A"
+    fn test_parse_expression_case_9() {
+        let mut parser = Parser::new(vec![
+            new_identifier_token("p"),
+            new_punct_token(token::Punct::Dot),
+            new_identifier_token("name"),
+            new_op_token(token::Op::Plus),
+            new_string_token("!".to_string()),
+            new_keyword_token(token::Keyword::Starts),
+            new_keyword_token(token::Keyword::With),
+            new_string_token("A".to_string()),
+            new_eof_token(),
+        ]);
+        match parser.parse_expression(0) {
+            Ok(result) => {
+                assert_eq!(
+                    result,
+                    ast::Expression::AdvancedComparison {
+                        lhs: Box::new(ast::Expression::Binary {
+                            lhs: Box::new(ast::Expression::PropertyReference(
+                                ast::PropertyReference {
+                                    variable: ast::Variable("p".to_string()),
+                                    property: ast::Property("name".to_string()),
+                                }
+                            )),
+                            op: ast::BinaryOp::Add,
+                            rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
+                                "!".to_string()
+                            ))),
+                        }),
+                        op: ast::AdvancedComparisonOp::StartsWith,
+                        rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "A".to_string()
+                        ))),
+                    }
+                );
+            }
+            Err(err) => panic!("Unexpected error: {:?}", err),
+        }
+    }
+    #[test]
     fn test_parse_advanced_comparison_operator_starts_with() {
         let mut parser = Parser::new(vec![
             new_keyword_token(token::Keyword::Starts),
@@ -493,6 +619,21 @@ mod tests {
         assert!(!parser.is_eof());
         parser.advance(parser.tokens.len() - 1);
         assert!(parser.is_eof());
+    }
+
+    #[test]
+    fn test_maybe_skip_keyword_token() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Starts),
+            new_keyword_token(token::Keyword::Ends),
+            new_keyword_token(token::Keyword::With),
+            new_eof_token(),
+        ]);
+        assert_eq!(parser.position, 0);
+        parser.maybe_skip_keyword_token(token::Keyword::Ends);
+        assert_eq!(parser.position, 0);
+        parser.maybe_skip_keyword_token(token::Keyword::Starts);
+        assert_eq!(parser.position, 1);
     }
 
     #[test]

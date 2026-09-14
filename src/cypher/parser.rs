@@ -22,10 +22,10 @@ impl Parser {
 
     pub fn parse(mut self) -> Result<ast::Query, errors::Error> {
         let query = self.parse_query()?;
-        if self.peek_n(0).kind != token::TokenKind::Eof {
+        if self.peek(0).kind != token::TokenKind::Eof {
             return Err(errors::Error::UnexpectedToken {
                 location: "end of query".to_string(),
-                token: self.peek_n(0).kind,
+                token: self.peek(0).kind,
             });
         }
         Ok(query)
@@ -43,76 +43,89 @@ impl Parser {}
 impl Parser {
     /// Parses an expression with the given minimum binding power.
     fn parse_expression(&mut self, min_bp: u8) -> Result<ast::Expression, errors::Error> {
-        let mut lhs: ast::Expression;
+        let mut lhs: Option<ast::Expression> = None;
+
         if let Some(op) = self.parse_unary_operator() {
             self.advance(1);
             let rhs = self.parse_expression(op.binding_power() + 1)?;
-            lhs = ast::Expression::Unary {
+            lhs = Some(ast::Expression::Unary {
                 op,
                 operand: Box::new(rhs),
-            };
+            });
         } else if let Some((value, advance)) = self.parse_atom() {
             self.advance(advance);
-            lhs = value;
-        } else {
-            return Err(errors::Error::UnexpectedToken {
-                location: "expression".to_string(),
-                token: self.peek_n(0).kind,
-            });
+            lhs = Some(value);
+        } else if let Some(expr) = self.parse_count_star() {
+            self.advance(4);
+            lhs = Some(expr);
         }
 
         loop {
-            if let Some((op, advance)) = self.parse_advanced_comparison_operator() {
+            if let Some((op, advance)) = self.parse_advanced_comparison_operator()
+                && lhs.is_some()
+            {
                 if op.binding_power() < min_bp {
                     break;
                 }
                 self.advance(advance);
                 let rhs = self.parse_expression(op.binding_power() + 1)?;
-                lhs = ast::Expression::AdvancedComparison {
+                lhs = Some(ast::Expression::AdvancedComparison {
                     op,
-                    lhs: Box::new(lhs),
+                    lhs: Box::new(lhs.unwrap()),
                     rhs: Box::new(rhs),
-                };
+                });
                 continue;
             }
-            if let Some(op) = self.parse_binary_operator() {
+            if let Some(op) = self.parse_binary_operator()
+                && lhs.is_some()
+            {
                 if op.binding_power() < min_bp {
                     break;
                 }
                 self.advance(1);
                 let rhs = self.parse_expression(op.binding_power() + 1)?;
-                lhs = ast::Expression::Binary {
+                lhs = Some(ast::Expression::Binary {
                     op,
-                    lhs: Box::new(lhs),
+                    lhs: Box::new(lhs.unwrap()),
                     rhs: Box::new(rhs),
-                };
+                });
                 continue;
             }
-            if let Some(op) = self.parse_comparison_operator() {
+            if let Some(op) = self.parse_comparison_operator()
+                && lhs.is_some()
+            {
                 if op.binding_power() < min_bp {
                     break;
                 }
                 self.advance(1);
                 let rhs = self.parse_expression(op.binding_power() + 1)?;
-                lhs = ast::Expression::Comparison {
+                lhs = Some(ast::Expression::Comparison {
                     op,
-                    lhs: Box::new(lhs),
+                    lhs: Box::new(lhs.unwrap()),
                     rhs: Box::new(rhs),
-                };
+                });
                 continue;
             }
             break;
         }
-        Ok(lhs)
+
+        if let Some(item) = lhs {
+            Ok(item)
+        } else {
+            Err(errors::Error::UnexpectedToken {
+                location: "parse_expression".to_string(),
+                token: self.peek(0).kind,
+            })
+        }
     }
 
     /// Parses an advanced comparison operator, if one is present.
     fn parse_advanced_comparison_operator(&mut self) -> Option<(ast::AdvancedComparisonOp, usize)> {
-        match ast::AdvancedComparisonOp::try_from(self.peek_n(0)) {
+        match ast::AdvancedComparisonOp::try_from(self.peek(0)) {
             Ok(op) => Some((op, 1)),
             Err(_) => {
-                let p1 = self.peek_n(0);
-                let p2 = self.peek_n(1);
+                let p1 = self.peek(0);
+                let p2 = self.peek(1);
                 match (p1.kind, p2.kind) {
                     (
                         token::TokenKind::Keyword(token::Keyword::Starts),
@@ -130,7 +143,7 @@ impl Parser {
 
     /// Parses an atom, such as an integer, float, or string, or a property reference (a.foo)
     fn parse_atom(&mut self) -> Option<(ast::Expression, usize)> {
-        match self.peek_n(0).kind.clone() {
+        match self.peek(0).kind.clone() {
             token::TokenKind::Integer(value) => {
                 Some((ast::Expression::Literal(ast::Literal::Integer(value)), 1))
             }
@@ -151,17 +164,30 @@ impl Parser {
 
     /// Parses a binary operator, if one is present.
     fn parse_binary_operator(&mut self) -> Option<ast::BinaryOp> {
-        ast::BinaryOp::try_from(self.peek_n(0)).ok()
+        ast::BinaryOp::try_from(self.peek(0)).ok()
     }
 
     /// Parses a comparison operator, if one is present.
     fn parse_comparison_operator(&mut self) -> Option<ast::ComparisonOp> {
-        ast::ComparisonOp::try_from(self.peek_n(0)).ok()
+        ast::ComparisonOp::try_from(self.peek(0)).ok()
+    }
+
+    /// Parses a `COUNT(*)` expression, if one is present.
+    fn parse_count_star(&mut self) -> Option<ast::Expression> {
+        if self.peek(0).kind == token::TokenKind::Keyword(token::Keyword::Count)
+            && self.peek(1).kind == token::TokenKind::Punct(token::Punct::LParen)
+            && self.peek(2).kind == token::TokenKind::Op(token::Op::Star)
+            && self.peek(3).kind == token::TokenKind::Punct(token::Punct::RParen)
+        {
+            Some(ast::Expression::CountStar)
+        } else {
+            None
+        }
     }
 
     /// Parses a unary operator, if one is present.
     fn parse_unary_operator(&mut self) -> Option<ast::UnaryOp> {
-        ast::UnaryOp::try_from(self.peek_n(0)).ok()
+        ast::UnaryOp::try_from(self.peek(0)).ok()
     }
 }
 
@@ -176,21 +202,21 @@ impl Parser {
 
     /// Returns true if the current token is an `Eof` token or we hit the end of the token stack.
     fn is_eof(&self) -> bool {
-        self.peek_n(0).kind == token::TokenKind::Eof || self.position >= self.tokens.len()
+        self.peek(0).kind == token::TokenKind::Eof || self.position >= self.tokens.len()
     }
 
     /// Skips the current token if it is a keyword token with the given keyword.
     fn maybe_skip_keyword_token(&mut self, keyword: token::Keyword) {
-        if self.peek_n(0).kind == token::TokenKind::Keyword(keyword) {
+        if self.peek(0).kind == token::TokenKind::Keyword(keyword) {
             self.advance(1);
         }
     }
 
     /// Parses a property reference, if one is present, if Some, you need to advance 3
     fn parse_property_reference(&mut self) -> Option<ast::PropertyReference> {
-        let p1 = self.peek_n(0);
-        let p2 = self.peek_n(1);
-        let p3 = self.peek_n(2);
+        let p1 = self.peek(0);
+        let p2 = self.peek(1);
+        let p3 = self.peek(2);
         match (p1.kind, p2.kind, p3.kind) {
             (
                 token::TokenKind::Identifier(variable),
@@ -205,7 +231,7 @@ impl Parser {
     }
 
     /// Returns the current token, or an `Eof` token if the end of the tokens has been reached.
-    fn peek_n(&self, offset: usize) -> token::Token {
+    fn peek(&self, offset: usize) -> token::Token {
         let token = match self.tokens.get(self.position + offset) {
             Some(token) => token,
             None => self.tokens.last().unwrap(),
@@ -221,6 +247,7 @@ mod tests {
     // Parsing Expression Test Case
 
     #[test]
+    /// Property Reference Equality Comparison to String Literal
     fn test_parse_expression_case_1() {
         let mut parser = Parser::new(vec![
             new_identifier_token("p"),
@@ -251,6 +278,7 @@ mod tests {
     }
 
     #[test]
+    /// Property Reference >= Comparison to Numeric Literal
     fn test_parse_expression_case_2() {
         let mut parser = Parser::new(vec![
             new_identifier_token("p"),
@@ -285,6 +313,165 @@ mod tests {
         }
     }
 
+    #[test]
+    /// Count Star Expression
+    fn test_parse_expression_case_3() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Count),
+            new_punct_token(token::Punct::LParen),
+            new_op_token(token::Op::Star),
+            new_punct_token(token::Punct::RParen),
+            new_eof_token(),
+        ]);
+        match parser.parse_expression(0) {
+            Ok(result) => {
+                assert_eq!(result, ast::Expression::CountStar);
+            }
+            Err(err) => panic!("{:?}", err),
+        }
+    }
+
+    #[test]
+    /// Regex Match Expression
+    fn test_parse_expression_case_4() {
+        let mut parser = Parser::new(vec![
+            new_identifier_token("p"),
+            new_punct_token(token::Punct::Dot),
+            new_identifier_token("name"),
+            new_op_token(token::Op::EqTilde),
+            token::Token {
+                kind: token::TokenKind::String(".*".to_string()),
+                span: token::Span::default(),
+            },
+        ]);
+        match parser.parse_expression(0) {
+            Ok(result) => {
+                assert_eq!(
+                    result,
+                    ast::Expression::AdvancedComparison {
+                        lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                            variable: ast::Variable("p".to_string()),
+                            property: ast::Property("name".to_string()),
+                        })),
+                        op: ast::AdvancedComparisonOp::RegexEqual,
+                        rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
+                            ".*".to_string()
+                        ))),
+                    }
+                );
+            }
+            Err(err) => panic!("{:?}", err),
+        }
+    }
+
+    #[test]
+    /// Binary Operator Expression
+    fn test_parse_expression_case_5() {
+        let mut parser = Parser::new(vec![
+            new_identifier_token("p"),
+            new_punct_token(token::Punct::Dot),
+            new_identifier_token("age"),
+            new_op_token(token::Op::Plus),
+            token::Token {
+                kind: token::TokenKind::Float(4.2),
+                span: token::Span::default(),
+            },
+        ]);
+        match parser.parse_expression(0) {
+            Ok(result) => {
+                assert_eq!(
+                    result,
+                    ast::Expression::Binary {
+                        lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                            variable: ast::Variable("p".to_string()),
+                            property: ast::Property("age".to_string()),
+                        })),
+                        op: ast::BinaryOp::Add,
+                        rhs: Box::new(ast::Expression::Literal(ast::Literal::Float(4.2))),
+                    }
+                );
+            }
+            Err(err) => panic!("{:?}", err),
+        }
+    }
+
+    #[test]
+    /// Unexpected token
+    fn test_parse_expression_case_6() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Where),
+            new_eof_token(),
+        ]);
+        match parser.parse_expression(0) {
+            Ok(result) => panic!("Unexpected result: {:?}", result),
+            Err(err) => {
+                assert!(matches!(err, errors::Error::UnexpectedToken { .. }));
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_advanced_comparison_operator_starts_with() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Starts),
+            new_keyword_token(token::Keyword::With),
+            new_eof_token(),
+        ]);
+        match parser.parse_advanced_comparison_operator() {
+            Some((result, advance)) => {
+                assert_eq!(advance, 2);
+                assert_eq!(result, ast::AdvancedComparisonOp::StartsWith,);
+            }
+            None => panic!("Expected Some, got None"),
+        }
+    }
+
+    #[test]
+    fn test_parse_advanced_comparison_operator_ends_with() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Ends),
+            new_keyword_token(token::Keyword::With),
+            new_eof_token(),
+        ]);
+        match parser.parse_advanced_comparison_operator() {
+            Some((result, advance)) => {
+                assert_eq!(advance, 2);
+                assert_eq!(result, ast::AdvancedComparisonOp::EndsWith,);
+            }
+            None => panic!("Expected Some, got None"),
+        }
+    }
+
+    #[test]
+    fn test_parse_property_reference() {
+        let mut parser = Parser::new(vec![
+            new_identifier_token("p"),
+            new_punct_token(token::Punct::Dot),
+            new_identifier_token("age"),
+            new_eof_token(),
+        ]);
+        match parser.parse_property_reference() {
+            Some(result) => {
+                assert_eq!(
+                    result,
+                    ast::PropertyReference {
+                        variable: ast::Variable("p".to_string()),
+                        property: ast::Property("age".to_string()),
+                    }
+                );
+            }
+            None => panic!("Expected Some, got None"),
+        }
+    }
+
+    #[test]
+    fn test_parse_property_reference_none() {
+        let mut parser = Parser::new(vec![new_identifier_token("p"), new_eof_token()]);
+        if parser.parse_property_reference().is_some() {
+            panic!("Expected None, got Some");
+        }
+    }
+
     // Utility Function Tests
 
     #[test]
@@ -295,7 +482,7 @@ mod tests {
         assert_eq!(parser.position, 1);
 
         assert_eq!(
-            parser.peek_n(0).kind,
+            parser.peek(0).kind,
             token::TokenKind::Identifier("p".to_string()),
         );
     }
@@ -313,20 +500,10 @@ mod tests {
         let parser = fixture_node_parser();
         assert_eq!(parser.position, 0);
         assert_eq!(
-            parser.peek_n(0).kind,
-            token::TokenKind::Punct(token::Punct::LParen)
-        );
-    }
-
-    #[test]
-    fn test_peek_n() {
-        let parser = fixture_node_parser();
-        assert_eq!(parser.position, 0);
-        assert_eq!(
-            parser.peek_n(1).kind,
+            parser.peek(1).kind,
             token::TokenKind::Identifier("p".to_string()),
         );
-        assert_eq!(parser.peek_n(20).kind, token::TokenKind::Eof,);
+        assert_eq!(parser.peek(20).kind, token::TokenKind::Eof,);
     }
 
     // Test Fixture Functions

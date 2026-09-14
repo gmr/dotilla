@@ -383,8 +383,6 @@ pub struct PropertyReference {
 // Expressions
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
-    Identifier(String),
-    Literal(Literal),
     AdvancedComparison {
         op: AdvancedComparisonOp,
         lhs: Box<Expression>,
@@ -401,12 +399,15 @@ pub enum Expression {
         op: ComparisonOp,
         rhs: Box<Expression>,
     },
+    CountStar,
+    Identifier(String),
+    Literal(Literal),
+    PropertyReference(PropertyReference),
     /// `NOT`, unary `+`, unary `-`.
     Unary {
         op: UnaryOp,
         operand: Box<Expression>,
     },
-    PropertyReference(PropertyReference),
 }
 
 #[derive(

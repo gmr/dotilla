@@ -36,9 +36,6 @@ impl Parser {
     }
 }
 
-// Other parsing
-impl Parser {}
-
 // Expression Parsing
 impl Parser {
     /// Parses an expression with the given minimum binding power.
@@ -257,24 +254,22 @@ mod tests {
             new_string_token("Fred".to_string()),
             new_eof_token(),
         ]);
-        match parser.parse_expression(0) {
-            Ok(result) => {
-                assert_eq!(
-                    result,
-                    ast::Expression::Comparison {
-                        lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
-                            variable: ast::Variable("p".to_string()),
-                            property: ast::Property("name".to_string()),
-                        })),
-                        op: ast::ComparisonOp::Equal,
-                        rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "Fred".to_string()
-                        ))),
-                    }
-                );
+        let result = parser.parse_expression(0);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(
+            result,
+            ast::Expression::Comparison {
+                lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                    variable: ast::Variable("p".to_string()),
+                    property: ast::Property("name".to_string()),
+                })),
+                op: ast::ComparisonOp::Equal,
+                rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
+                    "Fred".to_string()
+                ))),
             }
-            Err(err) => panic!("{:?}", err),
-        }
+        );
     }
 
     #[test]
@@ -292,25 +287,23 @@ mod tests {
             },
             new_eof_token(),
         ]);
-        match parser.parse_expression(0) {
-            Ok(result) => {
-                assert_eq!(
-                    result,
-                    ast::Expression::Comparison {
-                        lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
-                            variable: ast::Variable("p".to_string()),
-                            property: ast::Property("age".to_string()),
-                        })),
-                        op: ast::ComparisonOp::GreaterOrEqual,
-                        rhs: Box::new(ast::Expression::Unary {
-                            op: ast::UnaryOp::Minus,
-                            operand: Box::new(ast::Expression::Literal(ast::Literal::Integer(5))),
-                        }),
-                    }
-                );
+        let result = parser.parse_expression(0);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(
+            result,
+            ast::Expression::Comparison {
+                lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                    variable: ast::Variable("p".to_string()),
+                    property: ast::Property("age".to_string()),
+                })),
+                op: ast::ComparisonOp::GreaterOrEqual,
+                rhs: Box::new(ast::Expression::Unary {
+                    op: ast::UnaryOp::Minus,
+                    operand: Box::new(ast::Expression::Literal(ast::Literal::Integer(5))),
+                }),
             }
-            Err(err) => panic!("{:?}", err),
-        }
+        );
     }
 
     #[test]
@@ -323,12 +316,10 @@ mod tests {
             new_punct_token(token::Punct::RParen),
             new_eof_token(),
         ]);
-        match parser.parse_expression(0) {
-            Ok(result) => {
-                assert_eq!(result, ast::Expression::CountStar);
-            }
-            Err(err) => panic!("{:?}", err),
-        }
+        let result = parser.parse_expression(0);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, ast::Expression::CountStar);
     }
 
     #[test]
@@ -344,24 +335,22 @@ mod tests {
                 span: token::Span::default(),
             },
         ]);
-        match parser.parse_expression(0) {
-            Ok(result) => {
-                assert_eq!(
-                    result,
-                    ast::Expression::AdvancedComparison {
-                        lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
-                            variable: ast::Variable("p".to_string()),
-                            property: ast::Property("name".to_string()),
-                        })),
-                        op: ast::AdvancedComparisonOp::RegexEqual,
-                        rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
-                            ".*".to_string()
-                        ))),
-                    }
-                );
+        let result = parser.parse_expression(0);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(
+            result,
+            ast::Expression::AdvancedComparison {
+                lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                    variable: ast::Variable("p".to_string()),
+                    property: ast::Property("name".to_string()),
+                })),
+                op: ast::AdvancedComparisonOp::RegexEqual,
+                rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
+                    ".*".to_string()
+                ))),
             }
-            Err(err) => panic!("{:?}", err),
-        }
+        );
     }
 
     #[test]
@@ -377,22 +366,20 @@ mod tests {
                 span: token::Span::default(),
             },
         ]);
-        match parser.parse_expression(0) {
-            Ok(result) => {
-                assert_eq!(
-                    result,
-                    ast::Expression::Binary {
-                        lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
-                            variable: ast::Variable("p".to_string()),
-                            property: ast::Property("age".to_string()),
-                        })),
-                        op: ast::BinaryOp::Add,
-                        rhs: Box::new(ast::Expression::Literal(ast::Literal::Float(4.2))),
-                    }
-                );
+        let result = parser.parse_expression(0);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(
+            result,
+            ast::Expression::Binary {
+                lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                    variable: ast::Variable("p".to_string()),
+                    property: ast::Property("age".to_string()),
+                })),
+                op: ast::BinaryOp::Add,
+                rhs: Box::new(ast::Expression::Literal(ast::Literal::Float(4.2))),
             }
-            Err(err) => panic!("{:?}", err),
-        }
+        );
     }
 
     #[test]
@@ -402,12 +389,10 @@ mod tests {
             new_keyword_token(token::Keyword::Where),
             new_eof_token(),
         ]);
-        match parser.parse_expression(0) {
-            Ok(result) => panic!("Unexpected result: {:?}", result),
-            Err(err) => {
-                assert!(matches!(err, errors::Error::UnexpectedToken { .. }));
-            }
-        }
+        let result = parser.parse_expression(0);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, errors::Error::UnexpectedToken { .. }));
     }
 
     #[test]
@@ -428,28 +413,24 @@ mod tests {
                 span: token::Span::default(),
             },
         ]);
-        match parser.parse_expression(0) {
-            Ok(result) => {
-                assert_eq!(
-                    result,
-                    ast::Expression::Binary {
-                        lhs: Box::new(ast::Expression::Binary {
-                            lhs: Box::new(ast::Expression::PropertyReference(
-                                ast::PropertyReference {
-                                    variable: ast::Variable("p".to_string()),
-                                    property: ast::Property("score".to_string()),
-                                }
-                            )),
-                            op: ast::BinaryOp::Multiply,
-                            rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(2))),
-                        }),
-                        op: ast::BinaryOp::Add,
-                        rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(1))),
-                    }
-                );
+        let result = parser.parse_expression(0);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(
+            result,
+            ast::Expression::Binary {
+                lhs: Box::new(ast::Expression::Binary {
+                    lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                        variable: ast::Variable("p".to_string()),
+                        property: ast::Property("score".to_string()),
+                    })),
+                    op: ast::BinaryOp::Multiply,
+                    rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(2))),
+                }),
+                op: ast::BinaryOp::Add,
+                rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(1))),
             }
-            Err(err) => panic!("Unexpected error: {:?}", err),
-        }
+        );
     }
 
     #[test]
@@ -471,28 +452,24 @@ mod tests {
             },
             new_eof_token(),
         ]);
-        match parser.parse_expression(0) {
-            Ok(result) => {
-                assert_eq!(
-                    result,
-                    ast::Expression::Comparison {
-                        lhs: Box::new(ast::Expression::Binary {
-                            lhs: Box::new(ast::Expression::PropertyReference(
-                                ast::PropertyReference {
-                                    variable: ast::Variable("p".to_string()),
-                                    property: ast::Property("age".to_string()),
-                                }
-                            )),
-                            op: ast::BinaryOp::Add,
-                            rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(1))),
-                        }),
-                        op: ast::ComparisonOp::GreaterOrEqual,
-                        rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(21))),
-                    }
-                );
+        let result = parser.parse_expression(0);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(
+            result,
+            ast::Expression::Comparison {
+                lhs: Box::new(ast::Expression::Binary {
+                    lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                        variable: ast::Variable("p".to_string()),
+                        property: ast::Property("age".to_string()),
+                    })),
+                    op: ast::BinaryOp::Add,
+                    rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(1))),
+                }),
+                op: ast::ComparisonOp::GreaterOrEqual,
+                rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(21))),
             }
-            Err(err) => panic!("Unexpected error: {:?}", err),
-        }
+        );
     }
 
     #[test]
@@ -509,33 +486,30 @@ mod tests {
             new_string_token("A".to_string()),
             new_eof_token(),
         ]);
-        match parser.parse_expression(0) {
-            Ok(result) => {
-                assert_eq!(
-                    result,
-                    ast::Expression::AdvancedComparison {
-                        lhs: Box::new(ast::Expression::Binary {
-                            lhs: Box::new(ast::Expression::PropertyReference(
-                                ast::PropertyReference {
-                                    variable: ast::Variable("p".to_string()),
-                                    property: ast::Property("name".to_string()),
-                                }
-                            )),
-                            op: ast::BinaryOp::Add,
-                            rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
-                                "!".to_string()
-                            ))),
-                        }),
-                        op: ast::AdvancedComparisonOp::StartsWith,
-                        rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "A".to_string()
-                        ))),
-                    }
-                );
+        let result = parser.parse_expression(0);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(
+            result,
+            ast::Expression::AdvancedComparison {
+                lhs: Box::new(ast::Expression::Binary {
+                    lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                        variable: ast::Variable("p".to_string()),
+                        property: ast::Property("name".to_string()),
+                    })),
+                    op: ast::BinaryOp::Add,
+                    rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
+                        "!".to_string()
+                    ))),
+                }),
+                op: ast::AdvancedComparisonOp::StartsWith,
+                rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
+                    "A".to_string()
+                ))),
             }
-            Err(err) => panic!("Unexpected error: {:?}", err),
-        }
+        );
     }
+
     #[test]
     fn test_parse_advanced_comparison_operator_starts_with() {
         let mut parser = Parser::new(vec![
@@ -543,13 +517,10 @@ mod tests {
             new_keyword_token(token::Keyword::With),
             new_eof_token(),
         ]);
-        match parser.parse_advanced_comparison_operator() {
-            Some((result, advance)) => {
-                assert_eq!(advance, 2);
-                assert_eq!(result, ast::AdvancedComparisonOp::StartsWith,);
-            }
-            None => panic!("Expected Some, got None"),
-        }
+        assert!(parser.parse_advanced_comparison_operator().is_some());
+        let (result, advance) = parser.parse_advanced_comparison_operator().unwrap();
+        assert_eq!(advance, 2);
+        assert_eq!(result, ast::AdvancedComparisonOp::StartsWith);
     }
 
     #[test]
@@ -559,13 +530,10 @@ mod tests {
             new_keyword_token(token::Keyword::With),
             new_eof_token(),
         ]);
-        match parser.parse_advanced_comparison_operator() {
-            Some((result, advance)) => {
-                assert_eq!(advance, 2);
-                assert_eq!(result, ast::AdvancedComparisonOp::EndsWith,);
-            }
-            None => panic!("Expected Some, got None"),
-        }
+        assert!(parser.parse_advanced_comparison_operator().is_some());
+        let (result, advance) = parser.parse_advanced_comparison_operator().unwrap();
+        assert_eq!(advance, 2);
+        assert_eq!(result, ast::AdvancedComparisonOp::EndsWith);
     }
 
     #[test]
@@ -576,26 +544,22 @@ mod tests {
             new_identifier_token("age"),
             new_eof_token(),
         ]);
-        match parser.parse_property_reference() {
-            Some(result) => {
-                assert_eq!(
-                    result,
-                    ast::PropertyReference {
-                        variable: ast::Variable("p".to_string()),
-                        property: ast::Property("age".to_string()),
-                    }
-                );
+        let result = parser.parse_property_reference();
+        assert!(result.is_some());
+        let result = result.unwrap();
+        assert_eq!(
+            result,
+            ast::PropertyReference {
+                variable: ast::Variable("p".to_string()),
+                property: ast::Property("age".to_string()),
             }
-            None => panic!("Expected Some, got None"),
-        }
+        );
     }
 
     #[test]
     fn test_parse_property_reference_none() {
         let mut parser = Parser::new(vec![new_identifier_token("p"), new_eof_token()]);
-        if parser.parse_property_reference().is_some() {
-            panic!("Expected None, got Some");
-        }
+        assert!(parser.parse_property_reference().is_none());
     }
 
     // Utility Function Tests
@@ -606,7 +570,6 @@ mod tests {
         assert_eq!(parser.position, 0);
         parser.advance(1);
         assert_eq!(parser.position, 1);
-
         assert_eq!(
             parser.peek(0).kind,
             token::TokenKind::Identifier("p".to_string()),

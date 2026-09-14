@@ -135,11 +135,22 @@ pub enum OrderDirection {
 // Expressions
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
+    Identifier(String),
     Literal(Literal),
+    AdvancedComparison {
+        op: AdvancedComparisonOp,
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
+    },
     /// `OR`, `XOR`, `AND`, and the arithmetic operators.
     Binary {
         op: BinaryOp,
         lhs: Box<Expression>,
+        rhs: Box<Expression>,
+    },
+    Comparison {
+        lhs: Box<Expression>,
+        op: ComparisonOp,
         rhs: Box<Expression>,
     },
     /// `NOT`, unary `+`, unary `-`.
@@ -147,15 +158,42 @@ pub enum Expression {
         op: UnaryOp,
         operand: Box<Expression>,
     },
-    /// `<comparison predicate>`
-    Comparison(Box<Comparison>),
+    PropertyReference(PropertyReference),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Comparison {
-    pub lhs: Box<Expression>,
-    pub op: ComparisonOp,
-    pub rhs: Box<Expression>,
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
+)]
+pub enum AdvancedComparisonOp {
+    #[strum(serialize = "CONTAINS")]
+    Contains,
+    #[strum(serialize = "IN")]
+    In,
+    #[strum(serialize = "=~")]
+    RegexEqual,
+    #[strum(serialize = "STARTS WITH")]
+    StartsWith,
+    #[strum(serialize = "ENDS WITH")]
+    EndsWith,
+}
+
+impl AdvancedComparisonOp {
+    pub const fn binding_power(self) -> u8 {
+        9
+    }
+}
+
+impl TryFrom<token::Token> for AdvancedComparisonOp {
+    type Error = strum::ParseError;
+
+    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
+        match value.kind {
+            token::TokenKind::Keyword(token::Keyword::Contains) => Ok(Self::Contains),
+            token::TokenKind::Keyword(token::Keyword::In) => Ok(Self::In),
+            token::TokenKind::Op(token::Op::EqTilde) => Ok(Self::RegexEqual),
+            _ => Err(strum::ParseError::VariantNotFound),
+        }
+    }
 }
 
 #[derive(
@@ -182,11 +220,11 @@ pub enum BinaryOp {
     Power,
 }
 
-impl TryFrom<&token::Token> for BinaryOp {
+impl TryFrom<token::Token> for BinaryOp {
     type Error = strum::ParseError;
 
-    fn try_from(value: &token::Token) -> Result<Self, Self::Error> {
-        match &value.kind {
+    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
+        match value.kind {
             token::TokenKind::Punct(token::Punct::And) => Ok(Self::And),
             token::TokenKind::Punct(token::Punct::Pipe) => Ok(Self::Or),
             other => {
@@ -203,35 +241,9 @@ impl BinaryOp {
             Self::Or => 1,
             Self::Xor => 3,
             Self::And => 5,
-            Self::Add | Self::Subtract => 9,
-            Self::Multiply | Self::Divide | Self::Modulo => 11,
-            Self::Power => 13,
-        }
-    }
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
-)]
-pub enum UnaryOp {
-    #[strum(serialize = "NOT")]
-    Not,
-    #[strum(serialize = "+")]
-    Plus,
-    #[strum(serialize = "-")]
-    Minus,
-}
-
-impl TryFrom<&token::Token> for UnaryOp {
-    type Error = strum::ParseError;
-
-    fn try_from(value: &token::Token) -> Result<Self, Self::Error> {
-        match &value.kind {
-            token::TokenKind::Op(token::Op::Plus) => Ok(Self::Plus),
-            token::TokenKind::Op(token::Op::Minus) => Ok(Self::Minus),
-            token::TokenKind::Punct(token::Punct::Not) => Ok(Self::Not),
-            token::TokenKind::Keyword(token::Keyword::Not) => Ok(Self::Not),
-            _ => Err(strum::ParseError::VariantNotFound),
+            Self::Add | Self::Subtract => 13,
+            Self::Multiply | Self::Divide | Self::Modulo => 15,
+            Self::Power => 19,
         }
     }
 }
@@ -256,29 +268,55 @@ pub enum ComparisonOp {
 
 impl ComparisonOp {
     pub const fn binding_power(self) -> u8 {
-        7
+        11
+    }
+}
+
+impl TryFrom<token::Token> for ComparisonOp {
+    type Error = strum::ParseError;
+
+    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
+        match value.kind {
+            token::TokenKind::Op(token::Op::Eq) => Ok(Self::Equal),
+            token::TokenKind::Op(token::Op::Ne) => Ok(Self::NotEqual),
+            token::TokenKind::Op(token::Op::Lt) => Ok(Self::Less),
+            token::TokenKind::Op(token::Op::Gt) => Ok(Self::Greater),
+            token::TokenKind::Op(token::Op::Le) => Ok(Self::LessOrEqual),
+            token::TokenKind::Op(token::Op::Ge) => Ok(Self::GreaterOrEqual),
+            _ => Err(strum::ParseError::VariantNotFound),
+        }
     }
 }
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, strum::AsRefStr, strum::Display, strum::EnumString,
 )]
-pub enum AdvancedCompOp {
-    #[strum(serialize = "CONTAINS")]
-    Contains,
-    #[strum(serialize = "IN")]
-    In,
-    #[strum(serialize = "=~")]
-    RegexEqual,
-    #[strum(serialize = "STARTS WITH")]
-    StartsWith,
-    #[strum(serialize = "ENDS WITH")]
-    EndsWith,
+pub enum UnaryOp {
+    #[strum(serialize = "NOT")]
+    Not,
+    #[strum(serialize = "+")]
+    Plus,
+    #[strum(serialize = "-")]
+    Minus,
 }
 
-impl AdvancedCompOp {
+impl TryFrom<token::Token> for UnaryOp {
+    type Error = strum::ParseError;
+
+    fn try_from(value: token::Token) -> Result<Self, Self::Error> {
+        match &value.kind {
+            token::TokenKind::Op(token::Op::Plus) => Ok(Self::Plus),
+            token::TokenKind::Op(token::Op::Minus) => Ok(Self::Minus),
+            token::TokenKind::Punct(token::Punct::Not) => Ok(Self::Not),
+            token::TokenKind::Keyword(token::Keyword::Not) => Ok(Self::Not),
+            _ => Err(strum::ParseError::VariantNotFound),
+        }
+    }
+}
+
+impl UnaryOp {
     pub const fn binding_power(self) -> u8 {
-        15
+        17
     }
 }
 

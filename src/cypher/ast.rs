@@ -43,8 +43,8 @@ pub struct Node {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Predicate {
-    properties: Option<HashMap<Property, Literal>>,
-    where_clause: Option<Expression>,
+    pub properties: Option<HashMap<Property, Literal>>,
+    pub where_clause: Option<Expression>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

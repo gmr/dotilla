@@ -1,4 +1,5 @@
 #![allow(unused)]
+use std::collections::HashMap;
 
 use super::{ast, errors, token};
 
@@ -95,8 +96,74 @@ impl Parser {
         Err(errors::Error::NotImplemented)
     }
 
+    // Parse an element's predicate (eg WHERE or {k:v ...})
     fn parse_predicate(&mut self) -> Result<ast::Predicate, errors::Error> {
-        Err(errors::Error::NotImplemented)
+        match self.peek(0).kind {
+            token::TokenKind::Keyword(token::Keyword::Where) => {
+                self.advance(1);
+                let expr = self.parse_expression(0)?;
+                Ok(ast::Predicate {
+                    properties: None,
+                    where_clause: Some(expr),
+                })
+            }
+            token::TokenKind::Punct(token::Punct::LBrace) => {
+                let pairs = self.parse_properties()?;
+                Ok(ast::Predicate {
+                    properties: Some(pairs),
+                    where_clause: None,
+                })
+            }
+            _ => Err(errors::Error::UnexpectedToken {
+                location: "parse_predicate".to_string(),
+                token: self.peek(0).kind.clone(),
+            }),
+        }
+    }
+
+    /// Parses a property key-value pair, e.g. `{k: v, ...}`.
+    fn parse_properties(&mut self) -> Result<HashMap<ast::Property, ast::Literal>, errors::Error> {
+        let open = self.peek(0);
+        if open.kind != token::TokenKind::Punct(token::Punct::LBrace) {
+            return Err(errors::Error::UnexpectedToken {
+                location: "parse_property_key_value_pairs (1)".to_string(),
+                token: open.kind.clone(),
+            });
+        }
+        self.advance(1);
+
+        let mut properties: HashMap<ast::Property, ast::Literal> = HashMap::new();
+        while !self.is_eof() {
+            let p1 = self.peek(0);
+            let p2 = self.peek(1);
+            let p3 = self.peek(2);
+            match (p1.kind, p2.kind, p3.kind) {
+                (token::TokenKind::Punct(token::Punct::RBrace), _, _) => {
+                    self.advance(1);
+                    return Ok(properties);
+                }
+                (token::TokenKind::Punct(token::Punct::Comma), _, _) => {
+                    self.advance(1);
+                    continue;
+                }
+                (
+                    token::TokenKind::Identifier(key),
+                    token::TokenKind::Punct(token::Punct::Colon),
+                    value,
+                ) => {
+                    let value = ast::Literal::try_from(value)?;
+                    self.advance(3);
+                    properties.insert(ast::Property(key), value);
+                }
+                (kind, _, _) => {
+                    return Err(errors::Error::UnexpectedToken {
+                        location: "parse_property_key_value_pairs (2)".to_string(),
+                        token: kind,
+                    });
+                }
+            }
+        }
+        Ok(properties)
     }
 
     fn parse_direction(&mut self) -> Result<ast::Direction, errors::Error> {
@@ -326,7 +393,148 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_relationship_direction_case_1() {
+    fn test_parse_predicate_case_1() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("foo"),
+            new_punct_token(token::Punct::Colon),
+            new_string_token("bar".to_string()),
+            new_punct_token(token::Punct::Comma),
+            new_identifier_token("baz"),
+            new_punct_token(token::Punct::Colon),
+            new_integer_token(42),
+            new_punct_token(token::Punct::RBrace),
+            new_eof_token(),
+        ]);
+
+        let mut properties: HashMap<ast::Property, ast::Literal> = HashMap::new();
+        properties.insert(
+            ast::Property("foo".to_string()),
+            ast::Literal::String("bar".to_string()),
+        );
+        properties.insert(ast::Property("baz".to_string()), ast::Literal::Integer(42));
+        let expectation = ast::Predicate {
+            properties: Some(properties),
+            where_clause: None,
+        };
+        let result = parser.parse_predicate();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_predicate_case_2() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Where),
+            new_identifier_token("a"),
+            new_punct_token(token::Punct::Dot),
+            new_identifier_token("foo"),
+            new_op_token(token::Op::Eq),
+            new_string_token("bar".to_string()),
+            new_keyword_token(token::Keyword::And),
+            new_identifier_token("a"),
+            new_punct_token(token::Punct::Dot),
+            new_identifier_token("baz"),
+            new_op_token(token::Op::Eq),
+            new_integer_token(42),
+            new_eof_token(),
+        ]);
+        let expr = ast::Expression::Binary {
+            op: ast::BinaryOp::And,
+            lhs: Box::new(ast::Expression::Comparison {
+                lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                    variable: ast::Variable("a".to_string()),
+                    property: ast::Property("foo".to_string()),
+                })),
+                op: ast::ComparisonOp::Equal,
+                rhs: Box::new(ast::Expression::Literal(ast::Literal::String(
+                    "bar".to_string(),
+                ))),
+            }),
+            rhs: Box::new(ast::Expression::Comparison {
+                lhs: Box::new(ast::Expression::PropertyReference(ast::PropertyReference {
+                    variable: ast::Variable("a".to_string()),
+                    property: ast::Property("baz".to_string()),
+                })),
+                op: ast::ComparisonOp::Equal,
+                rhs: Box::new(ast::Expression::Literal(ast::Literal::Integer(42))),
+            }),
+        };
+        let expectation = ast::Predicate {
+            properties: None,
+            where_clause: Some(expr),
+        };
+        let result = parser.parse_predicate();
+        println!("{:?}", result);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_predicate_case_3() {
+        let mut parser = Parser::new(vec![new_punct_token(token::Punct::LParen), new_eof_token()]);
+        let err = parser.parse_predicate().unwrap_err();
+        assert!(
+            matches!(err, errors::Error::UnexpectedToken { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_properties_case_1() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("foo"),
+            new_punct_token(token::Punct::Colon),
+            new_string_token("bar".to_string()),
+            new_punct_token(token::Punct::Comma),
+            new_identifier_token("baz"),
+            new_punct_token(token::Punct::Colon),
+            new_integer_token(42),
+            new_punct_token(token::Punct::RBrace),
+            new_eof_token(),
+        ]);
+
+        let mut expectation: HashMap<ast::Property, ast::Literal> = HashMap::new();
+        expectation.insert(
+            ast::Property("foo".to_string()),
+            ast::Literal::String("bar".to_string()),
+        );
+        expectation.insert(ast::Property("baz".to_string()), ast::Literal::Integer(42));
+        let result = parser.parse_properties();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_properties_case_2() {
+        let mut parser = Parser::new(vec![new_punct_token(token::Punct::LParen), new_eof_token()]);
+        let err = parser.parse_properties().unwrap_err();
+        assert!(
+            matches!(err, errors::Error::UnexpectedToken { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_properties_case_3() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBrace),
+            new_punct_token(token::Punct::LParen),
+            new_eof_token(),
+        ]);
+        let err = parser.parse_properties().unwrap_err();
+        assert!(
+            matches!(err, errors::Error::UnexpectedToken { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_relationship_direction_case_1() {
         let mut parser = Parser::new(vec![
             new_op_token(token::Op::Minus),
             new_op_token(token::Op::Gt),
@@ -339,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn test_relationship_direction_case_2() {
+    fn test_parse_relationship_direction_case_2() {
         let mut parser = Parser::new(vec![
             new_op_token(token::Op::Lt),
             new_op_token(token::Op::Minus),
@@ -352,7 +560,7 @@ mod tests {
     }
 
     #[test]
-    fn test_relationship_direction_case_3() {
+    fn test_parse_relationship_direction_case_3() {
         let mut parser = Parser::new(vec![
             new_op_token(token::Op::Minus),
             new_punct_token(token::Punct::LParen),
@@ -365,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn test_relationship_direction_case_4() {
+    fn test_parse_relationship_direction_case_4() {
         let mut parser = Parser::new(vec![new_punct_token(token::Punct::LParen), new_eof_token()]);
         let err = parser.parse_direction().unwrap_err();
         assert!(
@@ -764,6 +972,13 @@ mod tests {
     fn new_identifier_token(value: &str) -> token::Token {
         token::Token {
             kind: token::TokenKind::Identifier(value.to_string()),
+            span: token::Span::default(),
+        }
+    }
+
+    fn new_integer_token(value: u64) -> token::Token {
+        token::Token {
+            kind: token::TokenKind::Integer(value),
             span: token::Span::default(),
         }
     }

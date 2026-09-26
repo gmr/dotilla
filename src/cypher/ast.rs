@@ -47,11 +47,21 @@ pub struct Predicate {
     pub where_clause: Option<Expression>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PathLength {
+    Range {
+        lower: Option<u64>,
+        upper: Option<u64>,
+    },
+    Fixed(u64),
+    Any,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edge {
     pub variable: Option<Variable>,
     pub label: Option<Label>,
-    pub properties: Option<HashMap<Property, Literal>>,
+    pub length: Option<PathLength>,
     pub predicates: Vec<Predicate>,
 }
 

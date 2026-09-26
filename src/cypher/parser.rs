@@ -93,7 +93,173 @@ impl Parser {
     }
 
     fn parse_edge(&mut self) -> Result<ast::Edge, errors::Error> {
+        let ob = self.peek(0);
+        if ob.kind != token::TokenKind::Punct(token::Punct::RBracket) {
+            return Err(errors::Error::UnexpectedToken {
+                location: "parse_edge".to_string(),
+                token: ob.kind.clone(),
+            });
+        } else {
+            self.advance(1);
+        }
+
+        let mut label: Option<ast::Label> = None;
+        let mut length: Option<ast::PathLength> = None;
+        let mut predicates: Vec<ast::Predicate> = vec![];
+        let mut variable: Option<ast::Variable> = None;
+
+        while !self.is_eof() {
+            // Variable Path Length old syntax [*1..5]
+            if self.peek(0).kind == token::TokenKind::Op(token::Op::Star) {
+                self.advance(1);
+                length = self.parse_deprecated_path_length()?;
+                continue;
+            }
+            // Predicates (`WHERE` or `{key: 'value', ...}`)
+            if matches!(
+                self.peek(0).kind,
+                token::TokenKind::Punct(token::Punct::LBrace)
+                    | token::TokenKind::Keyword(token::Keyword::Where)
+            ) {
+                predicates.push(self.parse_predicate()?);
+                continue;
+            }
+
+            // Label Expression
+            (label, variable) = self.parse_label_expression()?;
+
+            if self.peek(0).kind == token::TokenKind::Punct(token::Punct::RBracket) {
+                self.advance(1);
+                break;
+            }
+        }
+        Ok(ast::Edge {
+            variable,
+            label,
+            length,
+            predicates,
+        })
+    }
+
+    fn parse_label_expression(
+        &mut self,
+    ) -> Result<(Option<ast::Label>, Option<ast::Variable>), errors::Error> {
         Err(errors::Error::NotImplemented)
+    }
+
+    // Parse deprecated variable path length syntax `[*1..5]`
+    fn parse_deprecated_path_length(&mut self) -> Result<Option<ast::PathLength>, errors::Error> {
+        match (
+            self.peek(0).kind,
+            self.peek(1).kind,
+            self.peek(2).kind,
+            self.peek(3).kind,
+        ) {
+            (
+                token::TokenKind::Op(token::Op::Star),
+                token::TokenKind::Integer(lower),
+                token::TokenKind::Punct(token::Punct::DotDot),
+                token::TokenKind::Integer(upper),
+            ) => {
+                self.advance(4);
+                Ok(Some(ast::PathLength::Range {
+                    lower: Some(lower),
+                    upper: Some(upper),
+                }))
+            }
+            (
+                token::TokenKind::Op(token::Op::Star),
+                token::TokenKind::Integer(lower),
+                token::TokenKind::Punct(token::Punct::DotDot),
+                _,
+            ) => {
+                self.advance(3);
+                Ok(Some(ast::PathLength::Range {
+                    lower: Some(lower),
+                    upper: None,
+                }))
+            }
+            (
+                token::TokenKind::Op(token::Op::Star),
+                token::TokenKind::Punct(token::Punct::DotDot),
+                token::TokenKind::Integer(upper),
+                _,
+            ) => {
+                self.advance(3);
+                Ok(Some(ast::PathLength::Range {
+                    lower: None,
+                    upper: Some(upper),
+                }))
+            }
+            (token::TokenKind::Op(token::Op::Star), token::TokenKind::Integer(value), _, _) => {
+                self.advance(3);
+                Ok(Some(ast::PathLength::Fixed(value)))
+            }
+            (token::TokenKind::Op(token::Op::Star), _, _, _) => Ok(Some(ast::PathLength::Any)),
+            _ => Ok(None),
+        }
+    }
+
+    // Parse Modern path length syntax `{1,3}` after a path node
+    fn parse_modern_path_length(&mut self) -> Result<Option<ast::PathLength>, errors::Error> {
+        match (
+            self.peek(0).kind,
+            self.peek(1).kind,
+            self.peek(2).kind,
+            self.peek(3).kind,
+            self.peek(4).kind,
+        ) {
+            (
+                token::TokenKind::Punct(token::Punct::LBrace),
+                token::TokenKind::Integer(lower),
+                token::TokenKind::Punct(token::Punct::Comma),
+                token::TokenKind::Integer(upper),
+                token::TokenKind::Punct(token::Punct::RBrace),
+            ) => {
+                self.advance(5);
+                Ok(Some(ast::PathLength::Range {
+                    lower: Some(lower),
+                    upper: Some(upper),
+                }))
+            }
+            (
+                token::TokenKind::Punct(token::Punct::LBrace),
+                token::TokenKind::Integer(lower),
+                token::TokenKind::Punct(token::Punct::Comma),
+                token::TokenKind::Punct(token::Punct::RBrace),
+                _,
+            ) => {
+                self.advance(4);
+                Ok(Some(ast::PathLength::Range {
+                    lower: Some(lower),
+                    upper: None,
+                }))
+            }
+            (
+                token::TokenKind::Punct(token::Punct::LBrace),
+                token::TokenKind::Punct(token::Punct::Comma),
+                token::TokenKind::Integer(upper),
+                token::TokenKind::Punct(token::Punct::RBrace),
+                _,
+            ) => {
+                self.advance(4);
+                Ok(Some(ast::PathLength::Range {
+                    lower: None,
+                    upper: Some(upper),
+                }))
+            }
+            (
+                token::TokenKind::Punct(token::Punct::LBrace),
+                token::TokenKind::Integer(value),
+                token::TokenKind::Punct(token::Punct::RBrace),
+                _,
+                _,
+            ) => {
+                self.advance(3);
+                Ok(Some(ast::PathLength::Fixed(value)))
+            }
+            _ => Ok(None),
+        }
     }
 
     // Parse an element's predicate (eg WHERE or {k:v ...})
@@ -394,6 +560,185 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_deprecated_path_length_case_1() {
+        let mut parser = Parser::new(vec![new_op_token(token::Op::Star), new_eof_token()]);
+        let expectation = Some(ast::PathLength::Any);
+        let result = parser.parse_deprecated_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_deprecated_path_length_case_2() {
+        let mut parser = Parser::new(vec![
+            new_op_token(token::Op::Star),
+            new_integer_token(2),
+            new_punct_token(token::Punct::DotDot),
+            new_integer_token(9),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::PathLength::Range {
+            lower: Some(2),
+            upper: Some(9),
+        });
+        let result = parser.parse_deprecated_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_deprecated_path_length_case_3() {
+        let mut parser = Parser::new(vec![
+            new_op_token(token::Op::Star),
+            new_integer_token(2),
+            new_punct_token(token::Punct::DotDot),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::PathLength::Range {
+            lower: Some(2),
+            upper: None,
+        });
+        let result = parser.parse_deprecated_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_deprecated_path_length_case_4() {
+        let mut parser = Parser::new(vec![
+            new_op_token(token::Op::Star),
+            new_punct_token(token::Punct::DotDot),
+            new_integer_token(4),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::PathLength::Range {
+            lower: None,
+            upper: Some(4),
+        });
+        let result = parser.parse_deprecated_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_deprecated_path_length_case_5() {
+        let mut parser = Parser::new(vec![
+            new_op_token(token::Op::Star),
+            new_integer_token(4),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::PathLength::Fixed(4));
+        let result = parser.parse_deprecated_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_deprecated_path_length_case_6() {
+        let mut parser = Parser::new(vec![
+            new_op_token(token::Op::Minus),
+            new_integer_token(4),
+            new_eof_token(),
+        ]);
+        let result = parser.parse_deprecated_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_modern_path_length_case_1() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBrace),
+            new_integer_token(2),
+            new_punct_token(token::Punct::Comma),
+            new_integer_token(9),
+            new_punct_token(token::Punct::RBrace),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::PathLength::Range {
+            lower: Some(2),
+            upper: Some(9),
+        });
+        let result = parser.parse_modern_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_modern_path_length_case_2() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBrace),
+            new_integer_token(2),
+            new_punct_token(token::Punct::Comma),
+            new_punct_token(token::Punct::RBrace),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::PathLength::Range {
+            lower: Some(2),
+            upper: None,
+        });
+        let result = parser.parse_modern_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_modern_path_length_case_3() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBrace),
+            new_punct_token(token::Punct::Comma),
+            new_integer_token(4),
+            new_punct_token(token::Punct::RBrace),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::PathLength::Range {
+            lower: None,
+            upper: Some(4),
+        });
+        let result = parser.parse_modern_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_modern_path_length_case_4() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBrace),
+            new_integer_token(42),
+            new_punct_token(token::Punct::RBrace),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::PathLength::Fixed(42));
+        let result = parser.parse_modern_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_modern_path_length_case_5() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LParen),
+            new_integer_token(42),
+            new_punct_token(token::Punct::RBrace),
+            new_eof_token(),
+        ]);
+        let result = parser.parse_modern_path_length();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, None);
+    }
 
     #[test]
     fn test_parse_predicate_case_1() {

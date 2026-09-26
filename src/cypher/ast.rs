@@ -4,13 +4,17 @@ use super::{errors, token};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Query {
-    clauses: Vec<Clause>,
+    pub clauses: Vec<Clause>,
+    pub return_clause: Option<Return>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Clause {
+    Create,
+    Delete,
     Match(Match),
-    Return(Return),
+    Merge,
+    Set,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -393,6 +397,10 @@ pub enum Expression {
         op: BinaryOp,
         lhs: Box<Expression>,
         rhs: Box<Expression>,
+    },
+    Case {
+        whens: Box<Expression>,
+        else_: Box<Expression>,
     },
     Comparison {
         lhs: Box<Expression>,

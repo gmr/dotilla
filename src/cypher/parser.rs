@@ -32,7 +32,92 @@ impl Parser {
     }
 
     fn parse_query(&mut self) -> Result<ast::Query, errors::Error> {
+        let mut clauses: Vec<ast::Clause> = Vec::new();
+        let mut return_clause: Option<ast::Return> = None;
+        let p1 = self.peek(1);
+        let p2 = self.peek(2);
+        match (p1.kind, p2.kind) {
+            (token::TokenKind::Keyword(token::Keyword::Match), _) => {
+                let clause = self.parse_match_statement()?;
+                clauses.push(ast::Clause::Match(clause));
+            }
+            (
+                token::TokenKind::Keyword(token::Keyword::Optional),
+                token::TokenKind::Keyword(token::Keyword::Match),
+            ) => {
+                let clause = self.parse_match_statement()?;
+                clauses.push(ast::Clause::Match(clause));
+            }
+            (token::TokenKind::Keyword(token::Keyword::Return), _) => {
+                return_clause = self.parse_return_statement()?;
+            }
+            _ => {}
+        }
+        if clauses.is_empty() {
+            Err(errors::Error::UnexpectedEof)
+        } else {
+            Ok(ast::Query {
+                clauses,
+                return_clause,
+            })
+        }
+    }
+
+    fn parse_match_statement(&mut self) -> Result<ast::Match, errors::Error> {
+        let optional = self.peek(0).kind == token::TokenKind::Keyword(token::Keyword::Optional);
+        if optional {
+            self.advance(1); // OPTIONAL
+        }
+        self.advance(1); // MATCH
         Err(errors::Error::NotImplemented)
+    }
+
+    fn parse_return_statement(&mut self) -> Result<Option<ast::Return>, errors::Error> {
+        Err(errors::Error::NotImplemented)
+    }
+}
+
+// Path Parsing
+impl Parser {
+    fn parse_path(&mut self) -> Result<ast::Path, errors::Error> {
+        Err(errors::Error::NotImplemented)
+    }
+
+    fn parse_path_segment(&mut self) -> Result<ast::Segment, errors::Error> {
+        Err(errors::Error::NotImplemented)
+    }
+
+    fn parse_node(&mut self) -> Result<ast::Node, errors::Error> {
+        Err(errors::Error::NotImplemented)
+    }
+
+    fn parse_edge(&mut self) -> Result<ast::Edge, errors::Error> {
+        Err(errors::Error::NotImplemented)
+    }
+
+    fn parse_predicate(&mut self) -> Result<ast::Predicate, errors::Error> {
+        Err(errors::Error::NotImplemented)
+    }
+
+    fn parse_direction(&mut self) -> Result<ast::Direction, errors::Error> {
+        match (self.peek(0).kind, self.peek(1).kind) {
+            (token::TokenKind::Op(token::Op::Lt), token::TokenKind::Op(token::Op::Minus)) => {
+                self.advance(2);
+                Ok(ast::Direction::Left)
+            }
+            (token::TokenKind::Op(token::Op::Minus), token::TokenKind::Op(token::Op::Gt)) => {
+                self.advance(2);
+                Ok(ast::Direction::Right)
+            }
+            (token::TokenKind::Op(token::Op::Minus), _) => {
+                self.advance(2);
+                Ok(ast::Direction::Undirected)
+            }
+            (t1, _) => Err(errors::Error::UnexpectedToken {
+                location: "parse_relationship_direction".to_string(),
+                token: t1,
+            }),
+        }
     }
 }
 
@@ -105,7 +190,6 @@ impl Parser {
             }
             break;
         }
-
         if let Some(item) = lhs {
             Ok(item)
         } else {
@@ -241,7 +325,54 @@ impl Parser {
 mod tests {
     use super::*;
 
-    // Parsing Expression Test Case
+    #[test]
+    fn test_relationship_direction_case_1() {
+        let mut parser = Parser::new(vec![
+            new_op_token(token::Op::Minus),
+            new_op_token(token::Op::Gt),
+            new_eof_token(),
+        ]);
+        let result = parser.parse_direction();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, ast::Direction::Right);
+    }
+
+    #[test]
+    fn test_relationship_direction_case_2() {
+        let mut parser = Parser::new(vec![
+            new_op_token(token::Op::Lt),
+            new_op_token(token::Op::Minus),
+            new_eof_token(),
+        ]);
+        let result = parser.parse_direction();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, ast::Direction::Left);
+    }
+
+    #[test]
+    fn test_relationship_direction_case_3() {
+        let mut parser = Parser::new(vec![
+            new_op_token(token::Op::Minus),
+            new_punct_token(token::Punct::LParen),
+            new_eof_token(),
+        ]);
+        let result = parser.parse_direction();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, ast::Direction::Undirected);
+    }
+
+    #[test]
+    fn test_relationship_direction_case_4() {
+        let mut parser = Parser::new(vec![new_punct_token(token::Punct::LParen), new_eof_token()]);
+        let err = parser.parse_direction().unwrap_err();
+        assert!(
+            matches!(err, errors::Error::UnexpectedToken { .. }),
+            "{err:?}"
+        );
+    }
 
     #[test]
     /// Property Reference Equality Comparison to String Literal

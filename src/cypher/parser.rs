@@ -163,7 +163,10 @@ impl Parser {
                 }
             }
         }
-        Ok(properties)
+        Err(errors::Error::UnexpectedToken {
+            location: "parse_properties_eof".to_string(),
+            token: token::TokenKind::Eof,
+        })
     }
 
     fn parse_direction(&mut self) -> Result<ast::Direction, errors::Error> {
@@ -524,6 +527,22 @@ mod tests {
         let mut parser = Parser::new(vec![
             new_punct_token(token::Punct::LBrace),
             new_punct_token(token::Punct::LParen),
+            new_eof_token(),
+        ]);
+        let err = parser.parse_properties().unwrap_err();
+        assert!(
+            matches!(err, errors::Error::UnexpectedToken { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_properties_case_4() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("foo"),
+            new_punct_token(token::Punct::Colon),
+            new_string_token("bar".to_string()),
             new_eof_token(),
         ]);
         let err = parser.parse_properties().unwrap_err();

@@ -94,7 +94,7 @@ impl Parser {
 
     fn parse_edge(&mut self) -> Result<ast::Edge, errors::Error> {
         let ob = self.peek(0);
-        if ob.kind != token::TokenKind::Punct(token::Punct::RBracket) {
+        if ob.kind != token::TokenKind::Punct(token::Punct::LBracket) {
             return Err(errors::Error::UnexpectedToken {
                 location: "parse_edge".to_string(),
                 token: ob.kind.clone(),
@@ -103,48 +103,83 @@ impl Parser {
             self.advance(1);
         }
 
-        let mut label: Option<ast::Label> = None;
+        let mut variable: Option<ast::Variable> = None;
+        let mut labels: Vec<ast::Label> = vec![];
         let mut length: Option<ast::PathLength> = None;
-        let mut predicates: Vec<ast::Predicate> = vec![];
+        let mut predicate: Option<ast::Predicate> = None;
         let mut variable: Option<ast::Variable> = None;
 
+        if let Some(value) = self.parse_edge_labels()? {
+            variable = value.variable;
+            labels = value.labels;
+        }
+
         while !self.is_eof() {
-            // Variable Path Length old syntax [*1..5]
-            if self.peek(0).kind == token::TokenKind::Op(token::Op::Star) {
-                self.advance(1);
-                length = self.parse_deprecated_path_length()?;
-                continue;
-            }
-            // Predicates (`WHERE` or `{key: 'value', ...}`)
-            if matches!(
-                self.peek(0).kind,
-                token::TokenKind::Punct(token::Punct::LBrace)
-                    | token::TokenKind::Keyword(token::Keyword::Where)
-            ) {
-                predicates.push(self.parse_predicate()?);
-                continue;
-            }
-
-            // Label Expression
-            (label, variable) = self.parse_label_expression()?;
-
-            if self.peek(0).kind == token::TokenKind::Punct(token::Punct::RBracket) {
-                self.advance(1);
-                break;
+            match self.peek(0).kind {
+                // Variable Path Length old syntax `*1..5`
+                token::TokenKind::Op(token::Op::Star) => {
+                    length = self.parse_deprecated_path_length()?;
+                    continue;
+                }
+                // Predicates `{key: 'value', ...}`)
+                token::TokenKind::Punct(token::Punct::LBrace) => {
+                    predicate = Some(self.parse_edge_predicate()?);
+                    continue;
+                }
+                token::TokenKind::Punct(token::Punct::RBracket) => {
+                    self.advance(1);
+                    break;
+                }
+                (value) => {
+                    return Err(errors::Error::UnexpectedToken {
+                        location: "parse_predicate".to_string(),
+                        token: value.clone(),
+                    });
+                }
             }
         }
         Ok(ast::Edge {
             variable,
-            label,
+            labels,
             length,
-            predicates,
+            predicate,
         })
     }
 
-    fn parse_label_expression(
-        &mut self,
-    ) -> Result<(Option<ast::Label>, Option<ast::Variable>), errors::Error> {
-        Err(errors::Error::NotImplemented)
+    fn parse_edge_labels(&mut self) -> Result<Option<ast::EdgeLabels>, errors::Error> {
+        let variable: Option<ast::Variable> = match (self.peek(0).kind, self.peek(1).kind) {
+            (token::TokenKind::Identifier(value), token::TokenKind::Punct(token::Punct::Colon)) => {
+                self.advance(1);
+                Some(ast::Variable(value.to_string()))
+            }
+            (token::TokenKind::Identifier(value), var) => {
+                self.advance(1);
+                Some(ast::Variable(value.to_string()))
+            }
+            _ => None,
+        };
+        if self.peek(0).kind != token::TokenKind::Punct(token::Punct::Colon) {
+            return Ok(Some(ast::EdgeLabels {
+                variable,
+                labels: vec![],
+            }));
+        }
+        self.advance(1);
+        let mut labels: Vec<ast::Label> = vec![];
+        while !self.is_eof() {
+            match self.peek(0).kind {
+                token::TokenKind::Identifier(value) => {
+                    labels.push(ast::Label(value.to_string()));
+                    self.advance(1);
+                }
+                token::TokenKind::Punct(token::Punct::Pipe) => {
+                    self.advance(1);
+                    continue;
+                }
+                _ => break,
+            }
+        }
+        Ok(Some(ast::EdgeLabels { variable, labels }))
     }
 
     // Parse deprecated variable path length syntax `[*1..5]`
@@ -262,8 +297,25 @@ impl Parser {
         }
     }
 
-    // Parse an element's predicate (eg WHERE or {k:v ...})
-    fn parse_predicate(&mut self) -> Result<ast::Predicate, errors::Error> {
+    // Parse an element's predicate ({k:v ...})
+    fn parse_edge_predicate(&mut self) -> Result<ast::Predicate, errors::Error> {
+        match self.peek(0).kind {
+            token::TokenKind::Punct(token::Punct::LBrace) => {
+                let pairs = self.parse_properties()?;
+                Ok(ast::Predicate {
+                    properties: Some(pairs),
+                    where_clause: None,
+                })
+            }
+            _ => Err(errors::Error::UnexpectedToken {
+                location: "parse_predicate".to_string(),
+                token: self.peek(0).kind.clone(),
+            }),
+        }
+    }
+
+    // Parse an ea query WHERE predicate
+    fn parse_where(&mut self) -> Result<ast::Predicate, errors::Error> {
         match self.peek(0).kind {
             token::TokenKind::Keyword(token::Keyword::Where) => {
                 self.advance(1);
@@ -271,13 +323,6 @@ impl Parser {
                 Ok(ast::Predicate {
                     properties: None,
                     where_clause: Some(expr),
-                })
-            }
-            token::TokenKind::Punct(token::Punct::LBrace) => {
-                let pairs = self.parse_properties()?;
-                Ok(ast::Predicate {
-                    properties: Some(pairs),
-                    where_clause: None,
                 })
             }
             _ => Err(errors::Error::UnexpectedToken {
@@ -300,10 +345,7 @@ impl Parser {
 
         let mut properties: HashMap<ast::Property, ast::Literal> = HashMap::new();
         while !self.is_eof() {
-            let p1 = self.peek(0);
-            let p2 = self.peek(1);
-            let p3 = self.peek(2);
-            match (p1.kind, p2.kind, p3.kind) {
+            match (self.peek(0).kind, self.peek(1).kind, self.peek(2).kind) {
                 (token::TokenKind::Punct(token::Punct::RBrace), _, _) => {
                     self.advance(1);
                     return Ok(properties);
@@ -562,6 +604,333 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parse_edge_case_1() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBracket),
+            new_identifier_token("a"),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_op_token(token::Op::Star),
+            new_integer_token(1),
+            new_punct_token(token::Punct::DotDot),
+            new_integer_token(5),
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("foo"),
+            new_punct_token(token::Punct::Colon),
+            new_string_token("bar".to_string()),
+            new_punct_token(token::Punct::RBrace),
+            new_punct_token(token::Punct::RBracket),
+            new_eof_token(),
+        ]);
+        let mut properties: HashMap<ast::Property, ast::Literal> = HashMap::new();
+        properties.insert(
+            ast::Property("foo".to_string()),
+            ast::Literal::String("bar".to_string()),
+        );
+        let expectation = ast::Edge {
+            variable: Some(ast::Variable("a".to_string())),
+            labels: vec![ast::Label("FOO".to_string())],
+            predicate: Some(ast::Predicate {
+                properties: Some(properties),
+                where_clause: None,
+            }),
+            length: Some(ast::PathLength::Range {
+                lower: Some(1),
+                upper: Some(5),
+            }),
+        };
+        let result = parser.parse_edge();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_edge_case_2() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("a"),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_eof_token(),
+        ]);
+        let err = parser.parse_edge().unwrap_err();
+        assert!(
+            matches!(err, errors::Error::UnexpectedToken { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_edge_case_3() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBracket),
+            new_identifier_token("a"),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_op_token(token::Op::Star),
+            new_integer_token(1),
+            new_punct_token(token::Punct::DotDot),
+            new_integer_token(5),
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("foo"),
+            new_punct_token(token::Punct::Colon),
+            new_string_token("bar".to_string()),
+            new_punct_token(token::Punct::RBrace),
+            new_punct_token(token::Punct::RBrace),
+            new_eof_token(),
+        ]);
+        let err = parser.parse_edge().unwrap_err();
+        assert!(
+            matches!(err, errors::Error::UnexpectedToken { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_edge_case_4() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBracket),
+            new_op_token(token::Op::Star),
+            new_integer_token(1),
+            new_punct_token(token::Punct::DotDot),
+            new_integer_token(5),
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("foo"),
+            new_punct_token(token::Punct::Colon),
+            new_string_token("bar".to_string()),
+            new_punct_token(token::Punct::RBrace),
+            new_punct_token(token::Punct::RBracket),
+            new_eof_token(),
+        ]);
+        let mut properties: HashMap<ast::Property, ast::Literal> = HashMap::new();
+        properties.insert(
+            ast::Property("foo".to_string()),
+            ast::Literal::String("bar".to_string()),
+        );
+        let expectation = ast::Edge {
+            variable: None,
+            labels: vec![],
+            predicate: Some(ast::Predicate {
+                properties: Some(properties),
+                where_clause: None,
+            }),
+            length: Some(ast::PathLength::Range {
+                lower: Some(1),
+                upper: Some(5),
+            }),
+        };
+        let result = parser.parse_edge();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_edge_case_5() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBracket),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_op_token(token::Op::Star),
+            new_integer_token(1),
+            new_punct_token(token::Punct::DotDot),
+            new_integer_token(5),
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("foo"),
+            new_punct_token(token::Punct::Colon),
+            new_string_token("bar".to_string()),
+            new_punct_token(token::Punct::RBrace),
+            new_punct_token(token::Punct::RBracket),
+            new_eof_token(),
+        ]);
+        let mut properties: HashMap<ast::Property, ast::Literal> = HashMap::new();
+        properties.insert(
+            ast::Property("foo".to_string()),
+            ast::Literal::String("bar".to_string()),
+        );
+        let expectation = ast::Edge {
+            variable: None,
+            labels: vec![ast::Label("FOO".to_string())],
+            predicate: Some(ast::Predicate {
+                properties: Some(properties),
+                where_clause: None,
+            }),
+            length: Some(ast::PathLength::Range {
+                lower: Some(1),
+                upper: Some(5),
+            }),
+        };
+        let result = parser.parse_edge();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_edge_case_6() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBracket),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("foo"),
+            new_punct_token(token::Punct::Colon),
+            new_string_token("bar".to_string()),
+            new_punct_token(token::Punct::RBrace),
+            new_punct_token(token::Punct::RBracket),
+            new_eof_token(),
+        ]);
+        let mut properties: HashMap<ast::Property, ast::Literal> = HashMap::new();
+        properties.insert(
+            ast::Property("foo".to_string()),
+            ast::Literal::String("bar".to_string()),
+        );
+        let expectation = ast::Edge {
+            variable: None,
+            labels: vec![ast::Label("FOO".to_string())],
+            predicate: Some(ast::Predicate {
+                properties: Some(properties),
+                where_clause: None,
+            }),
+            length: None,
+        };
+        let result = parser.parse_edge();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_edge_case_7() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBracket),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_punct_token(token::Punct::RBracket),
+            new_eof_token(),
+        ]);
+        let expectation = ast::Edge {
+            variable: None,
+            labels: vec![ast::Label("FOO".to_string())],
+            predicate: None,
+            length: None,
+        };
+        let result = parser.parse_edge();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_edge_case_8() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBracket),
+            new_punct_token(token::Punct::RBracket),
+            new_eof_token(),
+        ]);
+        let expectation = ast::Edge {
+            variable: None,
+            labels: vec![],
+            predicate: None,
+            length: None,
+        };
+        let result = parser.parse_edge();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_edge_labels_case_1() {
+        let mut parser = Parser::new(vec![
+            new_identifier_token("a"),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_punct_token(token::Punct::RBracket),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::EdgeLabels {
+            variable: Some(ast::Variable("a".to_string())),
+            labels: vec![ast::Label("FOO".to_string())],
+        });
+        let result = parser.parse_edge_labels();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_edge_labels_case_2() {
+        let mut parser = Parser::new(vec![
+            new_identifier_token("a"),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_punct_token(token::Punct::Pipe),
+            new_identifier_token("BAR"),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::EdgeLabels {
+            variable: Some(ast::Variable("a".to_string())),
+            labels: vec![ast::Label("FOO".to_string()), ast::Label("BAR".to_string())],
+        });
+        let result = parser.parse_edge_labels();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_edge_labels_case_3() {
+        let mut parser = Parser::new(vec![
+            new_identifier_token("FOO"),
+            new_punct_token(token::Punct::Pipe),
+            new_identifier_token("BAR"),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::EdgeLabels {
+            variable: Some(ast::Variable("FOO".to_string())),
+            labels: vec![],
+        });
+        let result = parser.parse_edge_labels();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_edge_labels_case_4() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_punct_token(token::Punct::Pipe),
+            new_identifier_token("BAR"),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::EdgeLabels {
+            variable: None,
+            labels: vec![ast::Label("FOO".to_string()), ast::Label("BAR".to_string())],
+        });
+        let result = parser.parse_edge_labels();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_edge_labels_case_5() {
+        let mut parser = Parser::new(vec![new_identifier_token("a"), new_eof_token()]);
+        let expectation = Some(ast::EdgeLabels {
+            variable: Some(ast::Variable("a".to_string())),
+            labels: vec![],
+        });
+        let result = parser.parse_edge_labels();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
     fn test_parse_deprecated_path_length_case_1() {
         let mut parser = Parser::new(vec![new_op_token(token::Op::Star), new_eof_token()]);
         let expectation = Some(ast::PathLength::Any);
@@ -741,7 +1110,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_predicate_case_1() {
+    fn test_parse_edge_predicate_case_1() {
         let mut parser = Parser::new(vec![
             new_punct_token(token::Punct::LBrace),
             new_identifier_token("foo"),
@@ -765,14 +1134,24 @@ mod tests {
             properties: Some(properties),
             where_clause: None,
         };
-        let result = parser.parse_predicate();
+        let result = parser.parse_edge_predicate();
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
     }
 
     #[test]
-    fn test_parse_predicate_case_2() {
+    fn test_parse_edge_predicate_case_2() {
+        let mut parser = Parser::new(vec![new_punct_token(token::Punct::LParen), new_eof_token()]);
+        let err = parser.parse_edge_predicate().unwrap_err();
+        assert!(
+            matches!(err, errors::Error::UnexpectedToken { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_where_case_1() {
         let mut parser = Parser::new(vec![
             new_keyword_token(token::Keyword::Where),
             new_identifier_token("a"),
@@ -813,7 +1192,7 @@ mod tests {
             properties: None,
             where_clause: Some(expr),
         };
-        let result = parser.parse_predicate();
+        let result = parser.parse_where();
         println!("{:?}", result);
         assert!(result.is_ok());
         let result = result.unwrap();
@@ -821,9 +1200,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_predicate_case_3() {
+    fn test_parse_where_case_2() {
         let mut parser = Parser::new(vec![new_punct_token(token::Punct::LParen), new_eof_token()]);
-        let err = parser.parse_predicate().unwrap_err();
+        let err = parser.parse_where().unwrap_err();
         assert!(
             matches!(err, errors::Error::UnexpectedToken { .. }),
             "{err:?}"

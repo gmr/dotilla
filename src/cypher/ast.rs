@@ -56,13 +56,18 @@ pub enum PathLength {
     Fixed(u64),
     Any,
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct EdgeLabels {
+    pub variable: Option<Variable>,
+    pub labels: Vec<Label>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edge {
     pub variable: Option<Variable>,
-    pub label: Option<Label>,
+    pub labels: Vec<Label>,
     pub length: Option<PathLength>,
-    pub predicates: Vec<Predicate>,
+    pub predicate: Option<Predicate>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

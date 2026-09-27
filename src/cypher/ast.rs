@@ -109,8 +109,8 @@ pub struct Where {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Return {
-    pub items: Vec<PropertyReference>,
     pub distinct: bool,
+    pub items: Vec<ReturnItem>,
     pub order_by: Vec<OrderItem>,
     pub skip: Option<u64>,
     pub limit: Option<u64>,

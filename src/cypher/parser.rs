@@ -99,7 +99,7 @@ impl Parser {
         let mut variable: Option<ast::Variable> = None;
         let mut labels: Vec<ast::Label> = vec![];
         let mut predicate: Option<ast::Predicate> = None;
-        if let Some(value) = self.parse_relationship_detail(token::Punct::Colon)? {
+        if let Some(value) = self.parse_relationship_detail(token::Punct::Colon, true)? {
             variable = value.variable;
             labels = value.labels;
         }
@@ -136,7 +136,7 @@ impl Parser {
         let mut predicate: Option<ast::Predicate> = None;
         let mut variable: Option<ast::Variable> = None;
 
-        if let Some(value) = self.parse_relationship_detail(token::Punct::Pipe)? {
+        if let Some(value) = self.parse_relationship_detail(token::Punct::Pipe, false)? {
             variable = value.variable;
             labels = value.labels;
         }
@@ -176,6 +176,7 @@ impl Parser {
     fn parse_relationship_detail(
         &mut self,
         delimiter: token::Punct,
+        allow_wildcards: bool,
     ) -> Result<Option<ast::RelationshipDetail>, errors::Error> {
         let variable: Option<ast::Variable> = match (self.peek(0).kind, self.peek(1).kind) {
             (token::TokenKind::Identifier(value), token::TokenKind::Punct(token::Punct::Colon)) => {
@@ -200,6 +201,10 @@ impl Parser {
             match self.peek(0).kind {
                 token::TokenKind::Identifier(value) => {
                     labels.push(ast::Label(value.to_string()));
+                    self.advance(1);
+                }
+                token::TokenKind::Op(token::Op::Percent) if allow_wildcards => {
+                    labels.push(ast::Label("%".to_string()));
                     self.advance(1);
                 }
                 token::TokenKind::Punct(value) if value == delimiter => {
@@ -953,7 +958,7 @@ mod tests {
             variable: Some(ast::Variable("a".to_string())),
             labels: vec![ast::Label("FOO".to_string())],
         });
-        let result = parser.parse_relationship_detail(token::Punct::Pipe);
+        let result = parser.parse_relationship_detail(token::Punct::Pipe, false);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
@@ -973,7 +978,7 @@ mod tests {
             variable: Some(ast::Variable("a".to_string())),
             labels: vec![ast::Label("FOO".to_string()), ast::Label("BAR".to_string())],
         });
-        let result = parser.parse_relationship_detail(token::Punct::Pipe);
+        let result = parser.parse_relationship_detail(token::Punct::Pipe, false);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
@@ -991,7 +996,7 @@ mod tests {
             variable: Some(ast::Variable("FOO".to_string())),
             labels: vec![],
         });
-        let result = parser.parse_relationship_detail(token::Punct::Pipe);
+        let result = parser.parse_relationship_detail(token::Punct::Pipe, false);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
@@ -1010,7 +1015,7 @@ mod tests {
             variable: None,
             labels: vec![ast::Label("FOO".to_string()), ast::Label("BAR".to_string())],
         });
-        let result = parser.parse_relationship_detail(token::Punct::Pipe);
+        let result = parser.parse_relationship_detail(token::Punct::Pipe, false);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
@@ -1023,7 +1028,26 @@ mod tests {
             variable: Some(ast::Variable("a".to_string())),
             labels: vec![],
         });
-        let result = parser.parse_relationship_detail(token::Punct::Pipe);
+        let result = parser.parse_relationship_detail(token::Punct::Pipe, false);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_relationship_detail_case_6() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_punct_token(token::Punct::Colon),
+            new_op_token(token::Op::Percent),
+            new_eof_token(),
+        ]);
+        let expectation = Some(ast::RelationshipDetail {
+            variable: None,
+            labels: vec![ast::Label("FOO".to_string()), ast::Label("%".to_string())],
+        });
+        let result = parser.parse_relationship_detail(token::Punct::Colon, true);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);

@@ -601,6 +601,85 @@ impl Parser {
     }
 }
 
+// Sort and Order Parsing
+impl Parser {
+    fn parse_order_by(&mut self) -> Result<Vec<ast::OrderEntry>, errors::Error> {
+        let mut entries: Vec<ast::OrderEntry> = vec![];
+        if self.peek(0).kind != token::TokenKind::Keyword(token::Keyword::Order)
+            && self.peek(0).kind != token::TokenKind::Keyword(token::Keyword::By)
+        {
+            return Ok(entries);
+        }
+        self.advance(2); // ORDER BY
+        while !self.is_eof() {
+            match self.peek(0).kind {
+                token::TokenKind::Identifier(_) => {
+                    if let Some(entry) = self.parse_order_entry()? {
+                        entries.push(entry);
+                    } else {
+                        break;
+                    }
+                }
+                token::TokenKind::Punct(token::Punct::Comma) => {
+                    self.advance(1);
+                    continue;
+                }
+                _ => break,
+            }
+        }
+        Ok(entries)
+    }
+
+    fn parse_order_entry(&mut self) -> Result<Option<ast::OrderEntry>, errors::Error> {
+        let item: ast::PropertyReference;
+        if let Some(value) = self.parse_property_reference() {
+            self.advance(3);
+            item = value;
+        } else {
+            return Ok(None);
+        }
+        let mut alias: Option<ast::Alias> = None;
+        if self.peek(0).kind == token::TokenKind::Keyword(token::Keyword::As) {
+            self.advance(1);
+            if let token::TokenKind::Identifier(value) = self.peek(0).kind {
+                alias = Some(ast::Alias(value));
+                self.advance(1);
+            } else {
+                return Err(errors::Error::UnexpectedToken {
+                    location: "parse_order_entry (2)".to_string(),
+                    token: token::TokenKind::Eof,
+                });
+            }
+        }
+        let mut direction = ast::OrderDirection::Asc;
+        if let Some(value) = self.parse_order_direction()? {
+            direction = value;
+        }
+        Ok(Some(ast::OrderEntry {
+            alias,
+            item,
+            direction,
+        }))
+    }
+
+    /// Parses a sort order, e.g. `ASC` or `DESC`.
+    fn parse_order_direction(&mut self) -> Result<Option<ast::OrderDirection>, errors::Error> {
+        match self.peek(0).kind {
+            token::TokenKind::Keyword(token::Keyword::Asc)
+            | token::TokenKind::Keyword(token::Keyword::Ascending) => {
+                self.advance(1);
+                Ok(Some(ast::OrderDirection::Asc))
+            }
+            token::TokenKind::Keyword(token::Keyword::Desc)
+            | token::TokenKind::Keyword(token::Keyword::Descending) => {
+                self.advance(1);
+                Ok(Some(ast::OrderDirection::Desc))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
 // Utility Functions
 impl Parser {
     /// Advances the parser position by the given count, if possible.
@@ -619,6 +698,19 @@ impl Parser {
     fn maybe_skip_keyword_token(&mut self, keyword: token::Keyword) {
         if self.peek(0).kind == token::TokenKind::Keyword(keyword) {
             self.advance(1);
+        }
+    }
+
+    /// Parses a keyword expression, e.g. `SKIP 10`.
+    fn parse_keyword_expression(
+        &mut self,
+        keyword: token::Keyword,
+    ) -> Result<Option<ast::Expression>, errors::Error> {
+        if self.peek(0).kind == token::TokenKind::Keyword(keyword) {
+            self.advance(1);
+            Ok(Some(self.parse_expression(0)?))
+        } else {
+            Ok(None)
         }
     }
 
@@ -1783,6 +1875,88 @@ mod tests {
     fn test_parse_property_reference_none() {
         let mut parser = Parser::new(vec![new_identifier_token("p"), new_eof_token()]);
         assert!(parser.parse_property_reference().is_none());
+    }
+
+    #[test]
+    fn test_parse_order_by_case_1() {
+        let tokens = lexer::lex("ORDER BY a.foo AS baz, a.bar DESC").unwrap();
+        let mut parser = Parser::new(tokens);
+        let result = parser.parse_order_by();
+        let expectation: Vec<ast::OrderEntry> = vec![
+            ast::OrderEntry {
+                item: ast::PropertyReference {
+                    variable: ast::Variable("a".to_string()),
+                    property: ast::Property("foo".to_string()),
+                },
+                alias: Some(ast::Alias("baz".to_string())),
+                direction: ast::OrderDirection::Asc,
+            },
+            ast::OrderEntry {
+                item: ast::PropertyReference {
+                    variable: ast::Variable("a".to_string()),
+                    property: ast::Property("bar".to_string()),
+                },
+                alias: None,
+                direction: ast::OrderDirection::Desc,
+            },
+        ];
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expectation);
+    }
+
+    #[test]
+    fn test_parse_order_direction_asc() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Asc),
+            new_eof_token(),
+        ]);
+        let result = parser.parse_order_direction();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(ast::OrderDirection::Asc));
+    }
+
+    #[test]
+    fn test_parse_order_direction_ascending() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Ascending),
+            new_eof_token(),
+        ]);
+        let result = parser.parse_order_direction();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(ast::OrderDirection::Asc));
+    }
+
+    #[test]
+    fn test_parse_order_direction_desc() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Desc),
+            new_eof_token(),
+        ]);
+        let result = parser.parse_order_direction();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(ast::OrderDirection::Desc));
+    }
+
+    #[test]
+    fn test_parse_order_direction_descending() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Descending),
+            new_eof_token(),
+        ]);
+        let result = parser.parse_order_direction();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(ast::OrderDirection::Desc));
+    }
+
+    #[test]
+    fn test_parse_order_direction_none() {
+        let mut parser = Parser::new(vec![
+            new_keyword_token(token::Keyword::Match),
+            new_eof_token(),
+        ]);
+        let result = parser.parse_order_direction();
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
     }
 
     // Utility Function Tests

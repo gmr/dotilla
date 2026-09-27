@@ -77,6 +77,7 @@ pub enum PathLength {
     Fixed(u64),
     Any,
 }
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelationshipDetail {
     pub variable: Option<Variable>,
@@ -109,14 +110,15 @@ pub struct Where {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Return {
     pub items: Vec<PropertyReference>,
-    pub order_by: Vec<OrderBy>,
+    pub order_by: Vec<OrderEntry>,
     pub skip: Option<u64>,
     pub limit: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct OrderBy {
+pub struct OrderEntry {
     pub item: PropertyReference,
+    pub alias: Option<Alias>,
     pub direction: OrderDirection,
 }
 
@@ -166,6 +168,7 @@ macro_rules! string_value {
     };
 }
 
+string_value!(Alias, "Alias");
 string_value!(Label, "Label");
 string_value!(Variable, "Variable");
 string_value!(Property, "Property");

@@ -31,14 +31,14 @@ pub struct Path(Vec<Segment>);
 pub enum Segment {
     Node(Node),
     Edge(Edge),
+    Direction(Direction),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     pub variable: Option<Variable>,
     pub labels: Vec<Label>,
-    pub properties: Option<HashMap<Property, Literal>>,
-    pub predicates: Vec<Predicate>,
+    pub predicate: Option<Predicate>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,7 +57,7 @@ pub enum PathLength {
     Any,
 }
 #[derive(Debug, Clone, PartialEq)]
-pub struct EdgeLabels {
+pub struct RelationshipDetail {
     pub variable: Option<Variable>,
     pub labels: Vec<Label>,
 }

@@ -89,7 +89,35 @@ impl Parser {
     }
 
     fn parse_node(&mut self) -> Result<ast::Node, errors::Error> {
-        Err(errors::Error::NotImplemented)
+        if self.peek(0).kind != token::TokenKind::Punct(token::Punct::LParen) {
+            return Err(errors::Error::UnexpectedToken {
+                location: "parse_node (1)".to_string(),
+                token: self.peek(0).kind.clone(),
+            });
+        }
+        self.advance(1);
+        let mut variable: Option<ast::Variable> = None;
+        let mut labels: Vec<ast::Label> = vec![];
+        let mut predicate: Option<ast::Predicate> = None;
+        if let Some(value) = self.parse_relationship_detail(token::Punct::Colon)? {
+            variable = value.variable;
+            labels = value.labels;
+        }
+        if self.peek(0).kind == token::TokenKind::Punct(token::Punct::LBrace) {
+            predicate = Some(self.parse_predicate()?);
+        }
+        if self.peek(0).kind != token::TokenKind::Punct(token::Punct::RParen) {
+            return Err(errors::Error::UnexpectedToken {
+                location: "parse_node (2)".to_string(),
+                token: self.peek(0).kind.clone(),
+            });
+        }
+        self.advance(1);
+        Ok(ast::Node {
+            variable,
+            labels,
+            predicate,
+        })
     }
 
     fn parse_edge(&mut self) -> Result<ast::Edge, errors::Error> {
@@ -103,13 +131,12 @@ impl Parser {
             self.advance(1);
         }
 
-        let mut variable: Option<ast::Variable> = None;
         let mut labels: Vec<ast::Label> = vec![];
         let mut length: Option<ast::PathLength> = None;
         let mut predicate: Option<ast::Predicate> = None;
         let mut variable: Option<ast::Variable> = None;
 
-        if let Some(value) = self.parse_edge_labels()? {
+        if let Some(value) = self.parse_relationship_detail(token::Punct::Pipe)? {
             variable = value.variable;
             labels = value.labels;
         }
@@ -123,7 +150,7 @@ impl Parser {
                 }
                 // Predicates `{key: 'value', ...}`)
                 token::TokenKind::Punct(token::Punct::LBrace) => {
-                    predicate = Some(self.parse_edge_predicate()?);
+                    predicate = Some(self.parse_predicate()?);
                     continue;
                 }
                 token::TokenKind::Punct(token::Punct::RBracket) => {
@@ -132,7 +159,7 @@ impl Parser {
                 }
                 (value) => {
                     return Err(errors::Error::UnexpectedToken {
-                        location: "parse_predicate".to_string(),
+                        location: "parse_edge".to_string(),
                         token: value.clone(),
                     });
                 }
@@ -146,7 +173,10 @@ impl Parser {
         })
     }
 
-    fn parse_edge_labels(&mut self) -> Result<Option<ast::EdgeLabels>, errors::Error> {
+    fn parse_relationship_detail(
+        &mut self,
+        delimiter: token::Punct,
+    ) -> Result<Option<ast::RelationshipDetail>, errors::Error> {
         let variable: Option<ast::Variable> = match (self.peek(0).kind, self.peek(1).kind) {
             (token::TokenKind::Identifier(value), token::TokenKind::Punct(token::Punct::Colon)) => {
                 self.advance(1);
@@ -159,7 +189,7 @@ impl Parser {
             _ => None,
         };
         if self.peek(0).kind != token::TokenKind::Punct(token::Punct::Colon) {
-            return Ok(Some(ast::EdgeLabels {
+            return Ok(Some(ast::RelationshipDetail {
                 variable,
                 labels: vec![],
             }));
@@ -172,14 +202,14 @@ impl Parser {
                     labels.push(ast::Label(value.to_string()));
                     self.advance(1);
                 }
-                token::TokenKind::Punct(token::Punct::Pipe) => {
+                token::TokenKind::Punct(value) if value == delimiter => {
                     self.advance(1);
                     continue;
                 }
                 _ => break,
             }
         }
-        Ok(Some(ast::EdgeLabels { variable, labels }))
+        Ok(Some(ast::RelationshipDetail { variable, labels }))
     }
 
     // Parse deprecated variable path length syntax `[*1..5]`
@@ -297,8 +327,8 @@ impl Parser {
         }
     }
 
-    // Parse an element's predicate ({k:v ...})
-    fn parse_edge_predicate(&mut self) -> Result<ast::Predicate, errors::Error> {
+    // Parse an element's kv properties predicate ({k:v ...})
+    fn parse_predicate(&mut self) -> Result<ast::Predicate, errors::Error> {
         match self.peek(0).kind {
             token::TokenKind::Punct(token::Punct::LBrace) => {
                 let pairs = self.parse_properties()?;
@@ -604,6 +634,75 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_parse_node_case_1() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LParen),
+            new_identifier_token("a"),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("BAR"),
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("foo"),
+            new_punct_token(token::Punct::Colon),
+            new_string_token("bar".to_string()),
+            new_punct_token(token::Punct::RBrace),
+            new_punct_token(token::Punct::RParen),
+            new_eof_token(),
+        ]);
+        let mut properties: HashMap<ast::Property, ast::Literal> = HashMap::new();
+        properties.insert(
+            ast::Property("foo".to_string()),
+            ast::Literal::String("bar".to_string()),
+        );
+        let expectation = ast::Node {
+            variable: Some(ast::Variable("a".to_string())),
+            labels: vec![ast::Label("FOO".to_string()), ast::Label("BAR".to_string())],
+            predicate: Some(ast::Predicate {
+                properties: Some(properties),
+                where_clause: None,
+            }),
+        };
+        let result = parser.parse_node();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_node_case_2() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LBrace),
+            new_identifier_token("a"),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_eof_token(),
+        ]);
+        let err = parser.parse_node().unwrap_err();
+        assert!(
+            matches!(err, errors::Error::UnexpectedToken { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn test_parse_node_case_3() {
+        let mut parser = Parser::new(vec![
+            new_punct_token(token::Punct::LParen),
+            new_identifier_token("a"),
+            new_punct_token(token::Punct::Colon),
+            new_identifier_token("FOO"),
+            new_punct_token(token::Punct::RBrace),
+            new_eof_token(),
+        ]);
+        let err = parser.parse_node().unwrap_err();
+        assert!(
+            matches!(err, errors::Error::UnexpectedToken { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
     fn test_parse_edge_case_1() {
         let mut parser = Parser::new(vec![
             new_punct_token(token::Punct::LBracket),
@@ -842,7 +941,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_edge_labels_case_1() {
+    fn test_parse_relationship_detail_case_1() {
         let mut parser = Parser::new(vec![
             new_identifier_token("a"),
             new_punct_token(token::Punct::Colon),
@@ -850,18 +949,18 @@ mod tests {
             new_punct_token(token::Punct::RBracket),
             new_eof_token(),
         ]);
-        let expectation = Some(ast::EdgeLabels {
+        let expectation = Some(ast::RelationshipDetail {
             variable: Some(ast::Variable("a".to_string())),
             labels: vec![ast::Label("FOO".to_string())],
         });
-        let result = parser.parse_edge_labels();
+        let result = parser.parse_relationship_detail(token::Punct::Pipe);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
     }
 
     #[test]
-    fn test_parse_edge_labels_case_2() {
+    fn test_parse_relationship_detail_case_2() {
         let mut parser = Parser::new(vec![
             new_identifier_token("a"),
             new_punct_token(token::Punct::Colon),
@@ -870,36 +969,36 @@ mod tests {
             new_identifier_token("BAR"),
             new_eof_token(),
         ]);
-        let expectation = Some(ast::EdgeLabels {
+        let expectation = Some(ast::RelationshipDetail {
             variable: Some(ast::Variable("a".to_string())),
             labels: vec![ast::Label("FOO".to_string()), ast::Label("BAR".to_string())],
         });
-        let result = parser.parse_edge_labels();
+        let result = parser.parse_relationship_detail(token::Punct::Pipe);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
     }
 
     #[test]
-    fn test_parse_edge_labels_case_3() {
+    fn test_parse_relationship_detail_case_3() {
         let mut parser = Parser::new(vec![
             new_identifier_token("FOO"),
             new_punct_token(token::Punct::Pipe),
             new_identifier_token("BAR"),
             new_eof_token(),
         ]);
-        let expectation = Some(ast::EdgeLabels {
+        let expectation = Some(ast::RelationshipDetail {
             variable: Some(ast::Variable("FOO".to_string())),
             labels: vec![],
         });
-        let result = parser.parse_edge_labels();
+        let result = parser.parse_relationship_detail(token::Punct::Pipe);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
     }
 
     #[test]
-    fn test_parse_edge_labels_case_4() {
+    fn test_parse_relationship_detail_case_4() {
         let mut parser = Parser::new(vec![
             new_punct_token(token::Punct::Colon),
             new_identifier_token("FOO"),
@@ -907,24 +1006,24 @@ mod tests {
             new_identifier_token("BAR"),
             new_eof_token(),
         ]);
-        let expectation = Some(ast::EdgeLabels {
+        let expectation = Some(ast::RelationshipDetail {
             variable: None,
             labels: vec![ast::Label("FOO".to_string()), ast::Label("BAR".to_string())],
         });
-        let result = parser.parse_edge_labels();
+        let result = parser.parse_relationship_detail(token::Punct::Pipe);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
     }
 
     #[test]
-    fn test_parse_edge_labels_case_5() {
+    fn test_parse_relationship_detail_case_5() {
         let mut parser = Parser::new(vec![new_identifier_token("a"), new_eof_token()]);
-        let expectation = Some(ast::EdgeLabels {
+        let expectation = Some(ast::RelationshipDetail {
             variable: Some(ast::Variable("a".to_string())),
             labels: vec![],
         });
-        let result = parser.parse_edge_labels();
+        let result = parser.parse_relationship_detail(token::Punct::Pipe);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
@@ -1110,7 +1209,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_edge_predicate_case_1() {
+    fn test_parse_predicate_case_1() {
         let mut parser = Parser::new(vec![
             new_punct_token(token::Punct::LBrace),
             new_identifier_token("foo"),
@@ -1134,16 +1233,16 @@ mod tests {
             properties: Some(properties),
             where_clause: None,
         };
-        let result = parser.parse_edge_predicate();
+        let result = parser.parse_predicate();
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result, expectation);
     }
 
     #[test]
-    fn test_parse_edge_predicate_case_2() {
+    fn test_parse_predicate_case_2() {
         let mut parser = Parser::new(vec![new_punct_token(token::Punct::LParen), new_eof_token()]);
-        let err = parser.parse_edge_predicate().unwrap_err();
+        let err = parser.parse_predicate().unwrap_err();
         assert!(
             matches!(err, errors::Error::UnexpectedToken { .. }),
             "{err:?}"

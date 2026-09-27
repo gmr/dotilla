@@ -20,8 +20,8 @@ pub enum Clause {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Match {
     pub optional: bool,
-    pub paths: Vec<Path>,
-    pub where_clause: Option<Expression>,
+    pub path: Path,
+    pub where_clause: Option<Where>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,16 +37,35 @@ pub struct Segment {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Node {
-    pub variable: Option<Variable>,
-    pub labels: Vec<Label>,
-    pub predicate: Option<Predicate>,
+pub struct Properties(HashMap<Property, Literal>);
+
+impl Properties {
+    pub fn new() -> Self {
+        Properties(HashMap::new())
+    }
+
+    /// Insert a property
+    pub fn insert(&mut self, key: Property, value: Literal) {
+        self.0.insert(key, value);
+    }
+
+    /// Helper to look up a property
+    pub fn get(&self, key: &Property) -> Option<&Literal> {
+        self.0.get(key)
+    }
+}
+
+impl Default for Properties {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Predicate {
-    pub properties: Option<HashMap<Property, Literal>>,
-    pub where_clause: Option<Expression>,
+pub struct Node {
+    pub variable: Option<Variable>,
+    pub labels: Vec<Label>,
+    pub properties: Option<Properties>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,19 +88,22 @@ pub struct Edge {
     pub variable: Option<Variable>,
     pub labels: Vec<Label>,
     pub length: Option<PathLength>,
-    pub predicate: Option<Predicate>,
+    pub properties: Option<Properties>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
-    /// `<-[...]-`
+    /// `<-`
     Left,
-    /// `-[...]->`
+    /// `->`
     Right,
-    /// `<-[...]->`
-    Either,
-    /// `-[...]-`
+    /// `-`
     Undirected,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Where {
+    pub expression: Expression,
 }
 
 #[derive(Debug, Clone, PartialEq)]

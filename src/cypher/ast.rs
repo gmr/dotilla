@@ -110,13 +110,22 @@ pub struct Where {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Return {
     pub items: Vec<PropertyReference>,
-    pub order_by: Vec<OrderEntry>,
+    pub distinct: bool,
+    pub order_by: Vec<OrderItem>,
     pub skip: Option<u64>,
     pub limit: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, strum::AsRefStr, strum::Display)]
+pub enum ReturnItem {
+    All,
+    Property(PropertyReference),
+    Expression(Expression),
+    Alias(Alias),
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct OrderEntry {
+pub struct OrderItem {
     pub item: PropertyReference,
     pub direction: OrderDirection,
 }
@@ -400,6 +409,8 @@ pub enum Literal {
     List(Vec<Literal>),
 }
 
+impl Eq for Literal {}
+
 impl Literal {
     pub fn try_from(token: token::TokenKind) -> Result<Self, errors::Error> {
         match token {
@@ -419,14 +430,14 @@ impl Literal {
 }
 
 // A reference to a property on a variable (`p.age` in `MATCH (p:Person) WHERE p.age > 10`)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub struct PropertyReference {
     pub variable: Variable,
     pub property: Property,
 }
 
 // Expressions
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Expression {
     AdvancedComparison {
         op: AdvancedComparisonOp,

@@ -603,8 +603,8 @@ impl Parser {
 
 // Sort and Order Parsing
 impl Parser {
-    fn parse_order_by(&mut self) -> Result<Vec<ast::OrderEntry>, errors::Error> {
-        let mut entries: Vec<ast::OrderEntry> = vec![];
+    fn parse_order_by(&mut self) -> Result<Vec<ast::OrderItem>, errors::Error> {
+        let mut entries: Vec<ast::OrderItem> = vec![];
         if self.peek(0).kind != token::TokenKind::Keyword(token::Keyword::Order)
             && self.peek(0).kind != token::TokenKind::Keyword(token::Keyword::By)
         {
@@ -630,7 +630,7 @@ impl Parser {
         Ok(entries)
     }
 
-    fn parse_order_entry(&mut self) -> Result<Option<ast::OrderEntry>, errors::Error> {
+    fn parse_order_entry(&mut self) -> Result<Option<ast::OrderItem>, errors::Error> {
         let item: ast::PropertyReference;
         if let Some(value) = self.parse_property_reference() {
             self.advance(3);
@@ -642,7 +642,7 @@ impl Parser {
         if let Some(value) = self.parse_order_direction()? {
             direction = value;
         }
-        Ok(Some(ast::OrderEntry { item, direction }))
+        Ok(Some(ast::OrderItem { item, direction }))
     }
 
     /// Parses a sort order, e.g. `ASC` or `DESC`.
@@ -1865,15 +1865,15 @@ mod tests {
         let tokens = lexer::lex("ORDER BY a.foo, a.bar DESC").unwrap();
         let mut parser = Parser::new(tokens);
         let result = parser.parse_order_by();
-        let expectation: Vec<ast::OrderEntry> = vec![
-            ast::OrderEntry {
+        let expectation: Vec<ast::OrderItem> = vec![
+            ast::OrderItem {
                 item: ast::PropertyReference {
                     variable: ast::Variable("a".to_string()),
                     property: ast::Property("foo".to_string()),
                 },
                 direction: ast::OrderDirection::Asc,
             },
-            ast::OrderEntry {
+            ast::OrderItem {
                 item: ast::PropertyReference {
                     variable: ast::Variable("a".to_string()),
                     property: ast::Property("bar".to_string()),

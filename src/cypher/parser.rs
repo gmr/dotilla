@@ -81,11 +81,40 @@ impl Parser {
 // Path Parsing
 impl Parser {
     fn parse_path(&mut self) -> Result<ast::Path, errors::Error> {
-        Err(errors::Error::NotImplemented)
+        let mut segments: Vec<ast::Segment> = vec![];
+        while !self.is_eof() {
+            if let Some(segment) = self.parse_path_segment()? {
+                segments.push(segment);
+            } else {
+                break;
+            }
+        }
+        Ok(ast::Path { segments })
     }
 
-    fn parse_path_segment(&mut self) -> Result<ast::Segment, errors::Error> {
-        Err(errors::Error::NotImplemented)
+    fn parse_path_segment(&mut self) -> Result<Option<ast::Segment>, errors::Error> {
+        let result = match self.peek(0).kind {
+            token::TokenKind::Punct(token::Punct::LParen) => {
+                let node = Some(self.parse_node()?);
+                let direction = self.parse_direction()?;
+                Some(ast::Segment {
+                    node,
+                    edge: None,
+                    direction,
+                })
+            }
+            token::TokenKind::Punct(token::Punct::LBracket) => {
+                let edge = Some(self.parse_edge()?);
+                let direction = self.parse_direction()?;
+                Some(ast::Segment {
+                    node: None,
+                    edge,
+                    direction,
+                })
+            }
+            _ => None,
+        };
+        Ok(result)
     }
 
     fn parse_node(&mut self) -> Result<ast::Node, errors::Error> {
@@ -412,24 +441,21 @@ impl Parser {
         })
     }
 
-    fn parse_direction(&mut self) -> Result<ast::Direction, errors::Error> {
+    fn parse_direction(&mut self) -> Result<Option<ast::Direction>, errors::Error> {
         match (self.peek(0).kind, self.peek(1).kind) {
             (token::TokenKind::Op(token::Op::Lt), token::TokenKind::Op(token::Op::Minus)) => {
                 self.advance(2);
-                Ok(ast::Direction::Left)
+                Ok(Some(ast::Direction::Left))
             }
             (token::TokenKind::Op(token::Op::Minus), token::TokenKind::Op(token::Op::Gt)) => {
                 self.advance(2);
-                Ok(ast::Direction::Right)
+                Ok(Some(ast::Direction::Right))
             }
             (token::TokenKind::Op(token::Op::Minus), _) => {
                 self.advance(2);
-                Ok(ast::Direction::Undirected)
+                Ok(Some(ast::Direction::Undirected))
             }
-            (t1, _) => Err(errors::Error::UnexpectedToken {
-                location: "parse_relationship_direction".to_string(),
-                token: t1,
-            }),
+            _ => Ok(None),
         }
     }
 }
@@ -637,6 +663,70 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cypher::lexer;
+
+    #[test]
+    fn test_parse_path_case_1() {
+        let tokens = lexer::lex("(a:Foo)->[b:BAR]->(c:Baz)").unwrap();
+        let mut parser = Parser::new(tokens);
+        let result = parser.parse_path();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        let expectation = ast::Path {
+            segments: vec![
+                ast::Segment {
+                    node: Some(ast::Node {
+                        variable: Some(ast::Variable("a".to_string())),
+                        labels: vec![ast::Label("Foo".to_string())],
+                        predicate: None,
+                    }),
+                    direction: Some(ast::Direction::Right),
+                    edge: None,
+                },
+                ast::Segment {
+                    edge: Some(ast::Edge {
+                        variable: Some(ast::Variable("b".to_string())),
+                        labels: vec![ast::Label("BAR".to_string())],
+                        length: None,
+                        predicate: None,
+                    }),
+                    direction: Some(ast::Direction::Right),
+                    node: None,
+                },
+                ast::Segment {
+                    node: Some(ast::Node {
+                        variable: Some(ast::Variable("c".to_string())),
+                        labels: vec![ast::Label("Baz".to_string())],
+                        predicate: None,
+                    }),
+                    direction: None,
+                    edge: None,
+                },
+            ],
+        };
+        assert_eq!(result, expectation);
+    }
+
+    #[test]
+    fn test_parse_path_case_2() {
+        let tokens = lexer::lex("(a:Foo) RETURN a").unwrap();
+        let mut parser = Parser::new(tokens);
+        let result = parser.parse_path();
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        let expectation = ast::Path {
+            segments: vec![ast::Segment {
+                node: Some(ast::Node {
+                    variable: Some(ast::Variable("a".to_string())),
+                    labels: vec![ast::Label("Foo".to_string())],
+                    predicate: None,
+                }),
+                direction: None,
+                edge: None,
+            }],
+        };
+        assert_eq!(result, expectation);
+    }
 
     #[test]
     fn test_parse_node_case_1() {
@@ -1409,7 +1499,7 @@ mod tests {
         let result = parser.parse_direction();
         assert!(result.is_ok());
         let result = result.unwrap();
-        assert_eq!(result, ast::Direction::Right);
+        assert_eq!(result, Some(ast::Direction::Right));
     }
 
     #[test]
@@ -1422,7 +1512,7 @@ mod tests {
         let result = parser.parse_direction();
         assert!(result.is_ok());
         let result = result.unwrap();
-        assert_eq!(result, ast::Direction::Left);
+        assert_eq!(result, Some(ast::Direction::Left));
     }
 
     #[test]
@@ -1433,19 +1523,16 @@ mod tests {
             new_eof_token(),
         ]);
         let result = parser.parse_direction();
-        assert!(result.is_ok());
         let result = result.unwrap();
-        assert_eq!(result, ast::Direction::Undirected);
+        assert_eq!(result, Some(ast::Direction::Undirected));
     }
 
     #[test]
     fn test_parse_relationship_direction_case_4() {
         let mut parser = Parser::new(vec![new_punct_token(token::Punct::LParen), new_eof_token()]);
-        let err = parser.parse_direction().unwrap_err();
-        assert!(
-            matches!(err, errors::Error::UnexpectedToken { .. }),
-            "{err:?}"
-        );
+        let result = parser.parse_direction();
+        let result = result.unwrap();
+        assert_eq!(result, None);
     }
 
     #[test]

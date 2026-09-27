@@ -25,13 +25,15 @@ pub struct Match {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Path(Vec<Segment>);
+pub struct Path {
+    pub segments: Vec<Segment>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Segment {
-    Node(Node),
-    Edge(Edge),
-    Direction(Direction),
+pub struct Segment {
+    pub node: Option<Node>,
+    pub edge: Option<Edge>,
+    pub direction: Option<Direction>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

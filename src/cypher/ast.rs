@@ -118,7 +118,6 @@ pub struct Return {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OrderEntry {
     pub item: PropertyReference,
-    pub alias: Option<Alias>,
     pub direction: OrderDirection,
 }
 

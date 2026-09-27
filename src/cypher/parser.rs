@@ -638,28 +638,11 @@ impl Parser {
         } else {
             return Ok(None);
         }
-        let mut alias: Option<ast::Alias> = None;
-        if self.peek(0).kind == token::TokenKind::Keyword(token::Keyword::As) {
-            self.advance(1);
-            if let token::TokenKind::Identifier(value) = self.peek(0).kind {
-                alias = Some(ast::Alias(value));
-                self.advance(1);
-            } else {
-                return Err(errors::Error::UnexpectedToken {
-                    location: "parse_order_entry (2)".to_string(),
-                    token: token::TokenKind::Eof,
-                });
-            }
-        }
         let mut direction = ast::OrderDirection::Asc;
         if let Some(value) = self.parse_order_direction()? {
             direction = value;
         }
-        Ok(Some(ast::OrderEntry {
-            alias,
-            item,
-            direction,
-        }))
+        Ok(Some(ast::OrderEntry { item, direction }))
     }
 
     /// Parses a sort order, e.g. `ASC` or `DESC`.
@@ -1879,7 +1862,7 @@ mod tests {
 
     #[test]
     fn test_parse_order_by_case_1() {
-        let tokens = lexer::lex("ORDER BY a.foo AS baz, a.bar DESC").unwrap();
+        let tokens = lexer::lex("ORDER BY a.foo, a.bar DESC").unwrap();
         let mut parser = Parser::new(tokens);
         let result = parser.parse_order_by();
         let expectation: Vec<ast::OrderEntry> = vec![
@@ -1888,7 +1871,6 @@ mod tests {
                     variable: ast::Variable("a".to_string()),
                     property: ast::Property("foo".to_string()),
                 },
-                alias: Some(ast::Alias("baz".to_string())),
                 direction: ast::OrderDirection::Asc,
             },
             ast::OrderEntry {
@@ -1896,7 +1878,6 @@ mod tests {
                     variable: ast::Variable("a".to_string()),
                     property: ast::Property("bar".to_string()),
                 },
-                alias: None,
                 direction: ast::OrderDirection::Desc,
             },
         ];
